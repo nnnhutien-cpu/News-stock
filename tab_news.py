@@ -116,11 +116,10 @@ RSS_FEEDS = [
     # VnExpress
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh/chung-khoan.rss"),
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh.rss"),
-    # Thế giới / quốc tế
+    # Thế giới / quốc tế — CHỈ dùng nguồn tài chính quốc tế, bỏ VnExpress the-gioi (lẫn bóng đá/xã hội)
     ("CafeF", "https://cafef.vn/tai-chinh-quoc-te.rss"),
     ("Vietstock", "https://vietstock.vn/rss/the-gioi.rss"),
     ("VnEconomy", "https://vneconomy.vn/rss/the-gioi.rss"),
-    ("VnExpress", "https://vnexpress.net/rss/the-gioi.rss"),
 ]
 
 SECTION_TINTUC       = "TIN TỨC"
@@ -152,6 +151,37 @@ _WORLD_FALSE_FRIENDS = re.compile(
     re.IGNORECASE,
 )
 
+# ── Từ khóa phi tài chính — nếu có trong tiêu đề thì BỎ QUA (bóng đá, giải trí...) ──
+_NON_FINANCE_KEYWORDS = [
+    # Thể thao
+    "bóng đá", "world cup", "euro ", "champions league", "premier league",
+    "la liga", "serie a", "bundesliga", "cup ", " cúp ", "vô địch", "huy chương",
+    "olympic", "seagames", "sea games", "asian games", "ngoại hạng anh",
+    "câu lạc bộ", " clb ", "bàn thắng", "bàn thua", "thủ môn", "tiền đạo",
+    "huấn luyện viên", "hlv ", "cầu thủ", "trọng tài", "penalty",
+    "f1 ", "tennis", "golf ", "bơi lội", "điền kinh", "boxing", "võ",
+    # Giải trí / văn hóa
+    "phim ", "ca sĩ", "diễn viên", "hoa hậu", "sao ", "nghệ sĩ",
+    "âm nhạc", "concert", "show ", "album", "mv ", "gameshow",
+    # Chính trị thuần túy (không liên quan thị trường)
+    "bầu cử", "nghị viện", "tổng thống", "thủ tướng", "ngoại giao",
+    # Thiên tai / tai nạn (không liên quan thị trường)
+    "động đất", "sóng thần", "lũ lụt", "cháy rừng", "tai nạn",
+]
+
+# ── Từ khóa tài chính quốc tế — nếu có thì GIỮ LẠI ──
+_WORLD_FINANCE_KEYWORDS = [
+    "kinh tế", "tài chính", "ngân hàng", "lãi suất", "lạm phát", "gdp",
+    "chứng khoán", "cổ phiếu", "thị trường", "đầu tư", "quỹ", "trái phiếu",
+    "tỷ giá", "ngoại tệ", "usd", "eur", "dầu", "vàng", "hàng hóa",
+    "thương mại", "xuất khẩu", "nhập khẩu", "thuế quan", "tariff",
+    "fed", "ecb", "imf", "world bank", "opec", "nasdaq", "dow jones",
+    "s&p", "nikkei", "kospi", "shanghai", "hang seng",
+    "wall street", "phố wall", "tăng trưởng", "suy thoái", "khủng hoảng",
+    "doanh nghiệp", "công ty", "tập đoàn", "m&a", "ipo", "niêm yết",
+    "cổ phần", "vốn", "doanh thu", "lợi nhuận",
+]
+
 def is_world_news(title: str) -> bool:
     """Tin liên quan ngoài Việt Nam (quốc gia/khu vực/tổ chức nước ngoài) -> tính là THẾ GIỚI."""
     working = _WORLD_FALSE_FRIENDS.sub(' ', title)
@@ -162,6 +192,22 @@ def is_world_news(title: str) -> bool:
         return True
     return False
 
+def is_finance_relevant_world_news(title: str) -> bool:
+    """
+    Với tin THẾ GIỚI: kiểm tra thêm xem có liên quan tài chính/kinh tế không.
+    Loại bỏ tin bóng đá, giải trí, thiên tai thuần túy.
+    Logic: GIỮ nếu có từ tài chính, BỎ nếu chỉ có từ phi tài chính.
+    """
+    t = title.lower()
+    # Nếu có từ khóa phi tài chính rõ ràng -> loại
+    if any(kw in t for kw in _NON_FINANCE_KEYWORDS):
+        return False
+    # Nếu có từ khóa tài chính -> giữ
+    if any(kw in t for kw in _WORLD_FINANCE_KEYWORDS):
+        return True
+    # Mặc định giữ lại (để không mất tin tài chính chưa liệt kê)
+    return True
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TÌM TICKER TRONG TIÊU ĐỀ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -169,12 +215,64 @@ _TICKER_PAT = re.compile(r'\b([A-Z0-9]{2,5})\b')
 # Nhận diện nếu tiêu đề đã có sẵn dạng "XXX: ..." hoặc "XXX - ..." ở đầu câu
 _LEADING_TICKER_PAT = re.compile(r'^\s*([A-Z0-9]{2,5})\s*[:\-–]\s*')
 
+# ── Loại trừ ticker nhầm với địa danh / từ viết tắt phổ biến ──────────────
+# Map: ticker → danh sách pattern (lowercase) trong tiêu đề gốc mà nếu match => KHÔNG phải ticker
+_TICKER_FALSE_POSITIVE: dict[str, list[str]] = {
+    # HCM = TP. Hồ Chí Minh (địa danh), KHÔNG phải Chứng khoán HCM (HSC)
+    # Chỉ loại khi có prefix địa danh rõ ràng, KHÔNG loại khi đứng độc lập (dạng mã CK)
+    "HCM": ["tp.hcm", "tp hcm", "tphcm", "thành phố hồ chí minh", "hồ chí minh",
+            "tại hcm", "ở hcm", "về hcm", "đến hcm", "từ hcm",
+            "thị trường hcm", "sở giao dịch hcm"],
+    # HN = Hà Nội (địa danh)
+    "HN":  ["hà nội", "tp hà nội", "tại hà nội", "ở hà nội", " hn ", "tại hn"],
+    # DN = Doanh nghiệp (viết tắt phổ biến)
+    "DN":  ["doanh nghiệp", " dn ", "các dn", "nhiều dn", "nhóm dn"],
+    # BT = Bình Thuận / Bình Thạnh
+    "BT":  ["bình thuận", "bình thạnh", "tỉnh bt"],
+    # CT = Công ty (rất phổ biến)
+    "CT":  [" ct ", "công ty", "các ct"],
+    # NT = Nha Trang / Ninh Thuận
+    "NT":  ["nha trang", "ninh thuận"],
+    # ND = Nam Định
+    "ND":  ["nam định"],
+    # BD = Bình Dương
+    "BD":  ["bình dương"],
+    # LA = Long An
+    "LA":  ["long an"],
+    # AG = An Giang (có thể nhầm với mã AG)
+    # AG là mã hợp lệ, nhưng cần cẩn thận khi đứng cạnh "an giang"
+    "AG":  ["tỉnh an giang", "tại an giang"],
+}
+
+# Pattern phát hiện "TP.HCM", "TP HCM", "TPHCM" trong title đã upper
+_TPHCM_PAT = re.compile(r'\bTP\.?HCM\b|T\.P\.HCM|TPHCM', re.IGNORECASE)
+
+def _is_false_positive_ticker(ticker: str, title_original: str) -> bool:
+    """
+    Kiểm tra xem ticker có phải nhầm lẫn với địa danh/từ viết tắt không.
+    title_original: tiêu đề gốc (chưa upper).
+    """
+    patterns = _TICKER_FALSE_POSITIVE.get(ticker)
+    if not patterns:
+        return False
+    t_lower = title_original.lower()
+    return any(p in t_lower for p in patterns)
+
 def extract_tickers(title: str) -> list:
-    """Tìm tất cả mã CK xuất hiện trong tiêu đề (viết hoa)."""
+    """
+    Tìm tất cả mã CK xuất hiện trong tiêu đề (viết hoa).
+    Lọc false positive: HCM trong 'TP.HCM', DN trong 'doanh nghiệp', v.v.
+    """
     found = []
-    for m in _TICKER_PAT.finditer(title.upper()):
-        if m.group(1) in ALL_TICKERS:
-            found.append(m.group(1))
+    title_upper = title.upper()
+    for m in _TICKER_PAT.finditer(title_upper):
+        tk = m.group(1)
+        if tk not in ALL_TICKERS:
+            continue
+        # Kiểm tra ngữ cảnh false positive
+        if _is_false_positive_ticker(tk, title):
+            continue
+        found.append(tk)
     return list(dict.fromkeys(found))  # dedup, giữ thứ tự
 
 def highlight_tickers(title: str) -> str:
@@ -205,9 +303,14 @@ def format_doanhnghiep_line(title: str, tickers: list) -> str:
     return highlight_tickers(title)
 
 def classify(source: str, title: str):
-    """Phân loại tin vào THẾ GIỚI, DOANH NGHIỆP, hay TIN TỨC (trong nước)."""
+    """
+    Phân loại tin vào THẾ GIỚI, DOANH NGHIỆP, hay TIN TỨC (trong nước).
+    Tin THẾ GIỚI phi tài chính (bóng đá, giải trí...) sẽ bị loại bỏ (trả None).
+    """
     if is_world_news(title):
-        return SECTION_THEGIOI
+        if is_finance_relevant_world_news(title):
+            return SECTION_THEGIOI
+        return None  # Bỏ qua tin thế giới phi tài chính
 
     t = title.lower()
     dn_kw = [
@@ -248,6 +351,8 @@ def _fetch_one(source_name: str, url: str):
             if title and link:
                 tickers = extract_tickers(title)
                 cat = classify(source_name, title)
+                if cat is None:
+                    continue  # Bỏ qua tin phi tài chính (bóng đá, giải trí...)
                 pub_dt = _parse_pubdate(e)
                 out.append({
                     "title":   title,
