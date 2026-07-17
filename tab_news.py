@@ -2,6 +2,8 @@ import streamlit as st
 import feedparser
 import time
 import calendar
+import io
+import csv
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
@@ -308,6 +310,22 @@ def render_section(label: str, items: list):
     )
 
 # ══════════════════════════════════════════════════════════════════════════════
+# XUẤT FILE CSV
+# ══════════════════════════════════════════════════════════════════════════════
+def build_csv(items: list) -> bytes:
+    """Xuất danh sách tin ra CSV (mở tốt bằng Excel, có BOM UTF-8)."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Danh mục", "Mã CK", "Nội dung", "Nguồn", "Thời gian", "Link"])
+    for it in items:
+        tickers_str = ", ".join(it["tickers"])
+        pub_dt = it.get("pub_dt")
+        time_str = pub_dt.strftime("%Y-%m-%d %H:%M") if pub_dt else ""
+        writer.writerow([it["cat"], tickers_str, it["title"], it["source"], time_str, it["link"]])
+    # BOM để Excel nhận đúng UTF-8 tiếng Việt
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 def render_tab_news():
@@ -353,6 +371,18 @@ def render_tab_news():
 
     tin_tuc      = [i for i in filtered if i["cat"] == SECTION_TINTUC]
     doanh_nghiep = [i for i in filtered if i["cat"] == SECTION_DOANHNGHIEP]
+
+    # ── NÚT TẢI VỀ ────────────────────────────────────────────────────────────
+    dl_col1, dl_col2 = st.columns([5, 1])
+    with dl_col2:
+        st.download_button(
+            "⬇️ Tải CSV",
+            data=build_csv(filtered),
+            file_name=f"tin_ck_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            help="Tải về danh sách tin đang hiển thị (đã áp dụng bộ lọc tìm kiếm nếu có).",
+        )
 
     # ── RENDER 2 CỘT ─────────────────────────────────────────────────────────
     if search and not filtered:
