@@ -116,10 +116,51 @@ RSS_FEEDS = [
     # VnExpress
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh/chung-khoan.rss"),
     ("VnExpress", "https://vnexpress.net/rss/kinh-doanh.rss"),
+    # Thế giới / quốc tế
+    ("CafeF", "https://cafef.vn/tai-chinh-quoc-te.rss"),
+    ("Vietstock", "https://vietstock.vn/rss/the-gioi.rss"),
+    ("VnEconomy", "https://vneconomy.vn/rss/the-gioi.rss"),
+    ("VnExpress", "https://vnexpress.net/rss/the-gioi.rss"),
 ]
 
-SECTION_TINTUC   = "TIN TỨC"
-SECTION_DOANHNGHIEP = "DOANH NGHIỆP"
+SECTION_TINTUC       = "TIN TỨC"
+SECTION_DOANHNGHIEP  = "DOANH NGHIỆP"
+SECTION_THEGIOI      = "THẾ GIỚI"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NHẬN DIỆN TIN THẾ GIỚI (ngoài Việt Nam)
+# ══════════════════════════════════════════════════════════════════════════════
+# Cụm từ/tên nước ghép — an toàn để so khớp dạng chuỗi con (không nhầm với từ tiếng Việt khác)
+_WORLD_LOOSE_PHRASES = [
+    "trung quốc", "nhật bản", "hàn quốc", "triều tiên", "ukraine", "ukraina",
+    "ấn độ", "indonesia", "thái lan", "singapore", "malaysia", "philippines",
+    "campuchia", "myanmar", "canada", "brazil", "mexico", "argentina",
+    "ả rập", "uae", "dubai", "qatar", "thổ nhĩ kỳ", "israel", "iran", "iraq",
+    "ai cập", "nam phi", "châu âu", "châu á", "châu phi", "eurozone",
+    "wall street", "phố wall", "nasdaq", "dow jones", "s&p 500", "s&p500",
+    "đài loan", "hong kong", "hồng kông", "kospi", "nikkei", "shanghai",
+    "fed", "ecb", "opec", "imf", " wb ", "wto", "g7", "g20",
+    "quốc tế", "toàn cầu", "thế giới", "nước ngoài",
+]
+# Tên nước ngắn/dễ nhầm — chỉ khớp khi viết hoa đúng như tên riêng trong tiêu đề gốc
+_WORLD_STRICT_PAT = re.compile(r'\b(Mỹ|Nga|Đức|Pháp|Úc|Lào)\b')
+# Các cụm tiếng Việt chứa "mỹ"/"đức"... nhưng KHÔNG phải tên nước (mỹ phẩm, thẩm mỹ, Mỹ Đình...)
+_WORLD_FALSE_FRIENDS = re.compile(
+    r'\b(thẩm|hoàn|tuyệt|duy)\s+mỹ\b|'
+    r'\bmỹ\s+(phẩm|thuật|nghệ|vị|mãn|nhân|danh|tục|cảm|ý|đình|tho|hào|đức|xuyên|lồng|hạnh|hưng|quan|dung)\b|'
+    r'\bđạo\s+đức\b|\bcông\s+đức\b|\bân\s+đức\b|\bphẩm\s+đức\b',
+    re.IGNORECASE,
+)
+
+def is_world_news(title: str) -> bool:
+    """Tin liên quan ngoài Việt Nam (quốc gia/khu vực/tổ chức nước ngoài) -> tính là THẾ GIỚI."""
+    working = _WORLD_FALSE_FRIENDS.sub(' ', title)
+    t = f" {working.lower()} "
+    if any(kw in t for kw in _WORLD_LOOSE_PHRASES):
+        return True
+    if _WORLD_STRICT_PAT.search(working):
+        return True
+    return False
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TÌM TICKER TRONG TIÊU ĐỀ
@@ -164,7 +205,10 @@ def format_doanhnghiep_line(title: str, tickers: list) -> str:
     return highlight_tickers(title)
 
 def classify(source: str, title: str):
-    """Phân loại tin vào TIN TỨC hay DOANH NGHIỆP."""
+    """Phân loại tin vào THẾ GIỚI, DOANH NGHIỆP, hay TIN TỨC (trong nước)."""
+    if is_world_news(title):
+        return SECTION_THEGIOI
+
     t = title.lower()
     dn_kw = [
         "kqkd","kết quả kinh doanh","doanh thu","lợi nhuận","cổ tức",
@@ -245,6 +289,7 @@ def fetch_all_news():
 STYLES = {
     SECTION_TINTUC:      {"hdr": "#D46B08", "bg": "#FFF7E6", "border": "#FFD591"},
     SECTION_DOANHNGHIEP: {"hdr": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE"},
+    SECTION_THEGIOI:     {"hdr": "#059669", "bg": "#ECFDF5", "border": "#A7F3D0"},
 }
 
 def _time_badge(pub_dt):
@@ -372,6 +417,7 @@ def render_tab_news():
 
     tin_tuc      = [i for i in filtered if i["cat"] == SECTION_TINTUC]
     doanh_nghiep = [i for i in filtered if i["cat"] == SECTION_DOANHNGHIEP]
+    the_gioi     = [i for i in filtered if i["cat"] == SECTION_THEGIOI]
 
     # ── NÚT TẢI VỀ ────────────────────────────────────────────────────────────
     dl_col1, dl_col2 = st.columns([5, 1])
@@ -385,16 +431,19 @@ def render_tab_news():
             help="Tải về danh sách tin đang hiển thị (đã áp dụng bộ lọc tìm kiếm nếu có).",
         )
 
-    # ── RENDER 2 CỘT ─────────────────────────────────────────────────────────
+    # ── RENDER 3 CỘT ─────────────────────────────────────────────────────────
     if search and not filtered:
         st.warning(f'Không tìm thấy tin nào cho "{search}". Thử mã khác hoặc từ khóa khác.')
         return
 
-    col1, col2 = st.columns(2, gap="medium")
+    col1, col2, col3 = st.columns(3, gap="medium")
     with col1:
         render_section(SECTION_TINTUC + label_extra, tin_tuc, section_key=SECTION_TINTUC)
     with col2:
         render_section(SECTION_DOANHNGHIEP + label_extra, doanh_nghiep, section_key=SECTION_DOANHNGHIEP)
+    with col3:
+        render_section(SECTION_THEGIOI + label_extra, the_gioi, section_key=SECTION_THEGIOI)
+
 
     # ── TICKER CLOUD (khi chưa search) ───────────────────────────────────────
     if not search and all_tickers_found:
