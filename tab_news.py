@@ -1,5 +1,8 @@
 import streamlit as st
 import feedparser
+import time
+import calendar
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 
@@ -76,6 +79,11 @@ VTN VTP VTQ VTR VTS VTT VTV VTX VTZ VUC VUI VXB WCS WSB YBC YBM YEG
 """.split())
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CẤU HÌNH THỜI GIAN LỌC TIN
+# ══════════════════════════════════════════════════════════════════════════════
+MAX_AGE_DAYS = 2  # chỉ giữ tin trong vòng 2 ngày gần nhất
+
+# ══════════════════════════════════════════════════════════════════════════════
 # RSS — Tất cả chuyên mục có thể chứa tin DN niêm yết
 # ══════════════════════════════════════════════════════════════════════════════
 RSS_FEEDS = [
@@ -115,6 +123,8 @@ SECTION_DOANHNGHIEP = "DOANH NGHIỆP"
 # TÌM TICKER TRONG TIÊU ĐỀ
 # ══════════════════════════════════════════════════════════════════════════════
 _TICKER_PAT = re.compile(r'\b([A-Z0-9]{2,5})\b')
+# Nhận diện nếu tiêu đề đã có sẵn dạng "XXX: ..." hoặc "XXX - ..." ở đầu câu
+_LEADING_TICKER_PAT = re.compile(r'^\s*([A-Z0-9]{2,5})\s*[:\-–]\s*')
 
 def extract_tickers(title: str) -> list:
     """Tìm tất cả mã CK xuất hiện trong tiêu đề (viết hoa)."""
@@ -133,6 +143,24 @@ def highlight_tickers(title: str) -> str:
         return m.group(0)
     return _TICKER_PAT.sub(replace, title)
 
+def format_doanhnghiep_line(title: str, tickers: list) -> str:
+    """
+    Format tin DOANH NGHIỆP theo dạng 'MÃ: nội dung'.
+    - Nếu tiêu đề đã có sẵn dạng 'XXX: ...' với XXX là mã hợp lệ -> giữ nguyên, chỉ bôi đậm mã.
+    - Nếu chưa có -> gắn mã đầu tiên tìm được làm tiền tố 'MÃ: nội dung'.
+    - Nếu không tìm được mã nào -> trả về tiêu đề bôi đậm mã (nếu có) như cũ.
+    """
+    m = _LEADING_TICKER_PAT.match(title)
+    if m and m.group(1) in ALL_TICKERS:
+        rest = title[m.end():].strip()
+        return f'<b style="color:#0d3b8e">{m.group(1)}</b>: {highlight_tickers(rest)}'
+
+    if tickers:
+        primary = tickers[0]
+        return f'<b style="color:#0d3b8e">{primary}</b>: {highlight_tickers(title)}'
+
+    return highlight_tickers(title)
+
 def classify(source: str, title: str):
     """Phân loại tin vào TIN TỨC hay DOANH NGHIỆP."""
     t = title.lower()
@@ -148,6 +176,20 @@ def classify(source: str, title: str):
     return SECTION_TINTUC
 
 # ══════════════════════════════════════════════════════════════════════════════
+# NGÀY GIỜ XUẤT BẢN
+# ══════════════════════════════════════════════════════════════════════════════
+def _parse_pubdate(entry):
+    """Trả về datetime (UTC) từ entry RSS, hoặc None nếu không đọc được."""
+    for field in ("published_parsed", "updated_parsed"):
+        struct = getattr(entry, field, None)
+        if struct:
+            try:
+                return datetime.utcfromtimestamp(calendar.timegm(struct))
+            except Exception:
+                continue
+    return None
+
+# ══════════════════════════════════════════════════════════════════════════════
 # FETCH
 # ══════════════════════════════════════════════════════════════════════════════
 def _fetch_one(source_name: str, url: str):
@@ -160,12 +202,14 @@ def _fetch_one(source_name: str, url: str):
             if title and link:
                 tickers = extract_tickers(title)
                 cat = classify(source_name, title)
+                pub_dt = _parse_pubdate(e)
                 out.append({
                     "title":   title,
                     "link":    link,
                     "source":  source_name,
                     "tickers": tickers,
                     "cat":     cat,
+                    "pub_dt":  pub_dt,
                 })
         return out
     except Exception:
@@ -182,6 +226,15 @@ def fetch_all_news():
                 if item["title"] not in seen_titles:
                     all_items.append(item)
                     seen_titles.add(item["title"])
+
+    # ── Lọc tin không quá MAX_AGE_DAYS ngày ──
+    # Tin không xác định được ngày xuất bản sẽ bị loại để đảm bảo đúng tiêu chí "không quá 2 ngày"
+    cutoff = datetime.utcnow() - timedelta(days=MAX_AGE_DAYS)
+    all_items = [it for it in all_items if it["pub_dt"] and it["pub_dt"] >= cutoff]
+
+    # ── Sắp xếp mới nhất → cũ nhất ──
+    all_items.sort(key=lambda it: it["pub_dt"], reverse=True)
+
     return all_items
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -192,10 +245,24 @@ STYLES = {
     SECTION_DOANHNGHIEP: {"hdr": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE"},
 }
 
+def _time_badge(pub_dt):
+    if not pub_dt:
+        return ""
+    now = datetime.utcnow()
+    delta = now - pub_dt
+    if delta < timedelta(hours=24):
+        label = pub_dt.strftime("%H:%M")
+    else:
+        label = pub_dt.strftime("%H:%M %d/%m")
+    return (
+        f'<span style="font-size:10px;color:#aaa;margin-left:5px">{label}</span>'
+    )
+
 def render_section(label: str, items: list):
     s = STYLES[label]
     hdr, bg, bdr = s["hdr"], s["bg"], s["border"]
     count = len(items)
+    is_dn = label.startswith(SECTION_DOANHNGHIEP)
 
     st.markdown(
         f'<div style="background:{hdr};color:#fff;font-weight:700;font-size:13px;'
@@ -215,17 +282,22 @@ def render_section(label: str, items: list):
 
     rows = ""
     for item in items:
-        display = highlight_tickers(item["title"])
+        if is_dn:
+            display = format_doanhnghiep_line(item["title"], item["tickers"])
+        else:
+            display = highlight_tickers(item["title"])
+
         src_badge = (
             f'<span style="font-size:10px;color:#888;margin-left:5px;'
             f'background:#f0f0f0;padding:1px 5px;border-radius:3px">'
             f'{item["source"]}</span>'
         )
+        time_badge = _time_badge(item.get("pub_dt"))
         rows += (
             f'<li style="margin-bottom:8px;line-height:1.45">'
             f'<a href="{item["link"]}" target="_blank" '
             f'style="text-decoration:none;color:#1a1a1a;font-size:13px">{display}</a>'
-            f'{src_badge}</li>'
+            f'{src_badge}{time_badge}</li>'
         )
 
     st.markdown(
@@ -256,9 +328,9 @@ def render_tab_news():
     all_tickers_found = sorted(set(tk for item in all_news for tk in item["tickers"]))
 
     st.caption(
-        f"📊 {total} tin · {len(all_tickers_found)} mã được nhắc đến · "
+        f"📊 {total} tin (trong {MAX_AGE_DAYS} ngày gần nhất) · {len(all_tickers_found)} mã được nhắc đến · "
         f"Nguồn: CafeF · Vietstock · TNCK · VnEconomy · VietnamBiz · VnExpress · "
-        f"Cập nhật 15 phút/lần"
+        f"Cập nhật 15 phút/lần · Mới nhất → cũ nhất"
     )
 
     # ── SEARCH BOX ────────────────────────────────────────────────────────────
