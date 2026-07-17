@@ -260,11 +260,12 @@ def _time_badge(pub_dt):
         f'<span style="font-size:10px;color:#aaa;margin-left:5px">{label}</span>'
     )
 
-def render_section(label: str, items: list):
-    s = STYLES[label]
+def render_section(label: str, items: list, section_key: str = None):
+    section_key = section_key or label
+    s = STYLES[section_key]
     hdr, bg, bdr = s["hdr"], s["bg"], s["border"]
     count = len(items)
-    is_dn = label.startswith(SECTION_DOANHNGHIEP)
+    is_dn = section_key == SECTION_DOANHNGHIEP
 
     st.markdown(
         f'<div style="background:{hdr};color:#fff;font-weight:700;font-size:13px;'
@@ -391,9 +392,9 @@ def render_tab_news():
 
     col1, col2 = st.columns(2, gap="medium")
     with col1:
-        render_section(SECTION_TINTUC + label_extra, tin_tuc)
+        render_section(SECTION_TINTUC + label_extra, tin_tuc, section_key=SECTION_TINTUC)
     with col2:
-        render_section(SECTION_DOANHNGHIEP + label_extra, doanh_nghiep)
+        render_section(SECTION_DOANHNGHIEP + label_extra, doanh_nghiep, section_key=SECTION_DOANHNGHIEP)
 
     # ── TICKER CLOUD (khi chưa search) ───────────────────────────────────────
     if not search and all_tickers_found:
