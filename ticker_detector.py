@@ -2,7 +2,11 @@
 ticker_detector.py
 -------------------
 Nhận diện mã chứng khoán (3-4 chữ cái, HOSE/HNX/UPCOM) được nhắc đến
-trong một bài báo, dựa trên: tiêu đề, mô tả (nếu có) và URL bài viết.
+trong một bài báo, dựa trên: tiêu đề, mô tả (nếu có), URL bài viết, và
+QUAN TRỌNG: cả TÊN CÔNG TY (vì phần lớn tin tức doanh nghiệp viết theo
+tên, ví dụ "Viglacera bổ nhiệm thêm một Phó Tổng giám đốc" không hề
+chứa chữ "VGC" nào cả — nếu chỉ bắt token viết hoa thì sẽ bỏ sót hoàn
+toàn các tin dạng này).
 
 Nguyên tắc để tránh nhận nhầm (đây là điểm khác biệt so với bản cũ, vốn
 không hề kiểm tra tính hợp lệ của token — dẫn tới việc mọi cụm 3 chữ hoa
@@ -19,6 +23,12 @@ kiểu "TP.HCM", "GDP", "CEO"... đều có thể bị coi là mã CK sai lệch
    buộc, chỉ dùng để xếp hạng/nổi bật): đứng ngay sau "mã", "cổ phiếu",
    "CTCP", trong ngoặc đơn "(XXX)", hoặc xuất hiện trong slug URL dạng
    .../hose/xxx-ten-cong-ty.chn hay /XXX/tin-tuc.htm.
+5. TÊN CÔNG TY (VD: "Viglacera", "Hòa Phát", "Vinamilk"...) được so khớp
+   dạng cụm từ nguyên vẹn (word boundary, không phân biệt hoa/thường)
+   trong tiêu đề/mô tả, dựa trên bảng ánh xạ tên->mã lấy từ
+   ticker_universe.get_company_aliases(). Vì tên công ty là danh từ
+   riêng khá đặc thù (khác với token 3 chữ hoa rất dễ trùng từ viết tắt),
+   nên không cần đối chiếu blacklist cho bước này.
 """
 
 from __future__ import annotations
@@ -50,12 +60,29 @@ _URL_TICKER_RE2 = re.compile(r"/([A-Za-z]{3,4})/(?:tin-tuc|tai-tai-lieu)", re.IG
 # này thì loại trừ, vì xác suất đây là địa danh cao hơn nhiều so với mã CK.
 _LOCATION_PREFIX_RE = re.compile(r"(?:TP\.?|T\.P\.?)\s*$", re.IGNORECASE)
 
+# Độ dài tối thiểu của một alias tên công ty để được dùng so khớp — tránh
+# các tên quá ngắn/chung chung (VD: alias 2 ký tự) gây nhiễu.
+_MIN_ALIAS_LEN = 4
+
+
+def _word_boundary_pattern(phrase: str) -> re.Pattern:
+    """Biên dịch regex so khớp `phrase` như một cụm từ trọn vẹn, không
+    phân biệt hoa/thường, có ranh giới từ ở cả hai đầu (chấp nhận toàn bộ
+    ký tự chữ cái có dấu tiếng Việt để không cắt giữa từ)."""
+    escaped = re.escape(phrase.strip())
+    # \s+ linh hoạt khoảng trắng thay vì escape nguyên khoảng trắng gốc,
+    # để không bị lệch khi bài báo có 2 khoảng trắng hoặc xuống dòng.
+    escaped = re.sub(r"\\\s+", r"\\s+", escaped)
+    pattern = rf"(?<![A-Za-zÀ-ỹ0-9]){escaped}(?![A-Za-zÀ-ỹ0-9])"
+    return re.compile(pattern, re.IGNORECASE | re.UNICODE)
+
 
 @dataclass
 class DetectedTicker:
     ticker: str
     exchange: str
-    confidence: str = "normal"  # "high" nếu khớp ngữ cảnh mạnh hoặc từ URL
+    confidence: str = "normal"  # "high" nếu khớp ngữ cảnh mạnh / URL / tên công ty
+    matched_by: str = "code"  # "code" | "name" | "url"
 
 
 @dataclass
@@ -71,19 +98,48 @@ class TickerMatchResult:
 
 
 class TickerDetector:
-    """Bọc whitelist + blacklist lại thành một detector tái sử dụng được,
-    tránh phải truyền dict đi khắp nơi và cho phép nạp lại khi cache mã CK
-    được refresh (gọi `refresh()`).
+    """Bọc whitelist + blacklist + bảng tên công ty lại thành một detector
+    tái sử dụng được, tránh phải truyền dict đi khắp nơi và cho phép nạp
+    lại khi cache mã CK được refresh (gọi `refresh()`).
     """
 
-    def __init__(self, universe: Dict[str, str], blacklist: Set[str] | None = None):
-        self._universe = {k.upper(): v for k, v in universe.items()}
-        self._blacklist = {b.upper() for b in (blacklist or set())}
+    def __init__(
+        self,
+        universe: Dict[str, str],
+        blacklist: Set[str] | None = None,
+        aliases: Dict[str, List[str]] | None = None,
+    ):
+        self._universe: Dict[str, str] = {}
+        self._blacklist: Set[str] = set()
+        self._alias_patterns: List[tuple] = []  # [(ticker, compiled_pattern), ...]
+        self.refresh(universe, blacklist, aliases)
 
-    def refresh(self, universe: Dict[str, str], blacklist: Set[str] | None = None) -> None:
+    def refresh(
+        self,
+        universe: Dict[str, str],
+        blacklist: Set[str] | None = None,
+        aliases: Dict[str, List[str]] | None = None,
+    ) -> None:
         self._universe = {k.upper(): v for k, v in universe.items()}
         if blacklist is not None:
             self._blacklist = {b.upper() for b in blacklist}
+        if aliases is not None:
+            self._build_alias_patterns(aliases)
+
+    def _build_alias_patterns(self, aliases: Dict[str, List[str]]) -> None:
+        patterns = []
+        for ticker, names in aliases.items():
+            ticker_u = ticker.upper()
+            if ticker_u not in self._universe:
+                continue  # chỉ dùng alias cho mã thực sự tồn tại trong universe
+            for name in names:
+                name = (name or "").strip()
+                if len(name) < _MIN_ALIAS_LEN:
+                    continue
+                patterns.append((ticker_u, _word_boundary_pattern(name)))
+        # Ưu tiên alias dài hơn trước (đặc thù hơn -> ít khả năng trùng ngẫu nhiên)
+        patterns.sort(key=lambda p: len(p[1].pattern), reverse=True)
+        self._alias_patterns = patterns
 
     def _is_valid_ticker(self, token: str) -> bool:
         token = token.upper()
@@ -104,7 +160,7 @@ class TickerDetector:
         for m in _STRONG_CONTEXT_RE.finditer(text_for_context):
             token = m.group(1).upper()
             if self._is_valid_ticker(token) and token not in found:
-                found[token] = DetectedTicker(token, self._universe[token], confidence="high")
+                found[token] = DetectedTicker(token, self._universe[token], confidence="high", matched_by="code")
 
         # 2) Toàn bộ token ứng viên trong tiêu đề (nguồn tin cậy nhất vì
         #    tiêu đề luôn liên quan trực tiếp tới nội dung chính bài báo)
@@ -113,7 +169,7 @@ class TickerDetector:
             if self._preceded_by_location_prefix(title, m.start()):
                 continue
             if self._is_valid_ticker(token) and token not in found:
-                found[token] = DetectedTicker(token, self._universe[token], confidence="normal")
+                found[token] = DetectedTicker(token, self._universe[token], confidence="normal", matched_by="code")
 
         # 3) Token ứng viên trong mô tả/tóm tắt (độ tin cậy thấp hơn một
         #    chút vì mô tả có thể nhắc tới mã liên quan chứ không phải mã
@@ -124,7 +180,7 @@ class TickerDetector:
                 if self._preceded_by_location_prefix(description, m.start()):
                     continue
                 if self._is_valid_ticker(token) and token not in found:
-                    found[token] = DetectedTicker(token, self._universe[token], confidence="normal")
+                    found[token] = DetectedTicker(token, self._universe[token], confidence="normal", matched_by="code")
 
         # 4) Trích từ slug URL (rất đáng tin vì đây là cách CafeF/Vietstock
         #    tự gắn mã cho bài viết)
@@ -135,6 +191,18 @@ class TickerDetector:
                 if m:
                     token = m.group(1).upper()
                     if self._is_valid_ticker(token):
-                        found[token] = DetectedTicker(token, self._universe[token], confidence="high")
+                        found[token] = DetectedTicker(token, self._universe[token], confidence="high", matched_by="url")
+
+        # 5) TÊN CÔNG TY — bước quan trọng nhất để bắt các tin như
+        #    "Viglacera bổ nhiệm thêm một Phó Tổng giám đốc" (không có
+        #    chữ "VGC" nào trong tiêu đề cả, chỉ có tên công ty).
+        combined_text = f"{title} {description}"
+        for ticker_u, pattern in self._alias_patterns:
+            if ticker_u in found:
+                continue  # đã nhận diện được bằng mã rồi, khỏi cần tên nữa
+            if pattern.search(combined_text):
+                found[ticker_u] = DetectedTicker(
+                    ticker_u, self._universe[ticker_u], confidence="high", matched_by="name"
+                )
 
         return TickerMatchResult(tickers=list(found.values()))
