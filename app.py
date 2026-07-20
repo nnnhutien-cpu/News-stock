@@ -19,7 +19,7 @@ import streamlit as st
 
 from news_fetcher import collect_tickers_today, fetch_all_news, group_by_category
 from ticker_detector import TickerDetector
-from ticker_universe import get_blacklist, get_ticker_universe
+from ticker_universe import get_blacklist, get_company_aliases, get_ticker_universe
 
 st.set_page_config(page_title="Tin tức Chứng khoán VN", layout="wide")
 
@@ -27,7 +27,7 @@ st.set_page_config(page_title="Tin tức Chứng khoán VN", layout="wide")
 @st.cache_resource(ttl=24 * 3600)
 def load_detector() -> TickerDetector:
     universe = get_ticker_universe()
-    return TickerDetector(universe, get_blacklist())
+    return TickerDetector(universe, get_blacklist(), get_company_aliases())
 
 
 @st.cache_data(ttl=900)  # 15 phút, giống chu kỳ cập nhật của bản cũ
