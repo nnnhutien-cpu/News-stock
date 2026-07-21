@@ -116,3 +116,16 @@ GitHub khi chạy qua workflow.
 - Một số mã trùng với từ viết tắt thông dụng (VD: `CEO`, `VND`, `HCM`)
   không thể phân biệt 100% bằng regex — cần NLP/NER để xử lý triệt để
   hơn nếu muốn độ chính xác cao hơn nữa.
+- Các tiền tố nhãn tin nhanh của báo (VD: `TIN:`, `HOT:`, `LIVE:`) đã
+  được đưa vào blacklist mặc định để tránh bị nhận nhầm thành mã CK —
+  nếu phát hiện tiền tố mới tương tự gây nhiễu, thêm vào
+  `DEFAULT_BLACKLIST` trong `ticker_universe.py`.
+- **Quan trọng**: mỗi khi sửa `FALLBACK_ALIASES`/`FALLBACK_TICKERS`/
+  `DEFAULT_BLACKLIST`, nếu máy đã từng chạy app trước đó và có file
+  `tickers_cache.json` (cache 24h lấy từ vnstock), file cache đó **không**
+  chứa các alias/blacklist thủ công mới thêm — nhưng không sao vì
+  `get_ticker_universe_and_aliases()` luôn gọi `_merge_aliases(cached,
+  FALLBACK_ALIASES)`, tức FALLBACK_ALIASES luôn được cộng thêm dù cache
+  còn hạn hay không. Riêng nếu bạn *xoá bớt* hoặc *đổi tên* một mã trong
+  FALLBACK_TICKERS, nên xoá `tickers_cache.json` để tránh dữ liệu cũ lẫn
+  vào (`rm tickers_cache.json`).
