@@ -32,13 +32,13 @@ def load_detector() -> TickerDetector:
 
 @st.cache_data(ttl=900)  # 15 phút, giống chu kỳ cập nhật của bản cũ
 def load_news(_detector: TickerDetector):
-    items = fetch_all_news(detector=_detector)
-    return items
+    items, fetch_stats = fetch_all_news(detector=_detector, verbose=True)
+    return items, fetch_stats
 
 
 def main():
     detector = load_detector()
-    items = load_news(detector)
+    items, fetch_stats = load_news(detector)
     grouped = group_by_category(items)
     ticker_counts = collect_tickers_today(items)
 
@@ -117,6 +117,32 @@ def main():
         file_name="tin_tuc_chung_khoan.csv",
         mime="text/csv",
     )
+
+    # Khu vực debug: hiển thị trạng thái fetch từng nguồn RSS ngay trên UI,
+    # để thấy CHÍNH XÁC nguồn nào lỗi (403 do chặn bot, timeout, XML hỏng...)
+    # thay vì chỉ thấy "thiếu tin Vietstock/VietnamBiz" mà không rõ vì sao.
+    n_ok = sum(1 for s in fetch_stats if s.ok)
+    with st.expander(f"🔧 Trạng thái nguồn tin ({n_ok}/{len(fetch_stats)} nguồn OK)"):
+        status_df = pd.DataFrame(
+            [
+                {
+                    "Nguồn": s.source_name,
+                    "Trạng thái": "✅ OK" if s.ok else "❌ Lỗi",
+                    "Số bài": s.entry_count,
+                    "Ghi chú": s.error,
+                    "URL": s.url,
+                }
+                for s in fetch_stats
+            ]
+        )
+        st.dataframe(status_df, use_container_width=True, hide_index=True)
+        if n_ok < len(fetch_stats):
+            st.caption(
+                "Nguồn báo lỗi 403/0 bài thường do trang đặt sau Cloudflare/WAF "
+                "chặn IP của máy chủ chạy ứng dụng (kể cả khi vẫn mở được bằng "
+                "trình duyệt cá nhân). Xem README mục 'Khi Vietstock/VietnamBiz "
+                "không lấy được tin' để biết cách xử lý."
+            )
 
 
 if __name__ == "__main__":
