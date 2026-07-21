@@ -22,11 +22,13 @@ Thay thế cho news_scraper.py + phần cào dữ liệu trong tab_news.py bản
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import feedparser
+import requests
 
 from ticker_detector import TickerDetector
 from ticker_universe import get_blacklist, get_company_aliases, get_ticker_universe
@@ -93,17 +95,74 @@ def _normalize_title(title: str) -> str:
     return re.sub(r"\s+", " ", title).strip().lower()
 
 
-def _fetch_one_feed(url: str, timeout: int = 10):
+# Nhiều báo (đặc biệt Vietstock, VietnamBiz) đặt sau Cloudflare / WAF và có
+# thể chặn im lặng (403, hoặc trả về trang chặn thay vì XML) nếu request
+# "trông giống bot": không có Accept-Language, User-Agent quá đơn giản kiểu
+# "Mozilla/5.0" trần trụi, hoặc dùng bộ tải HTTP mặc định của feedparser
+# (urllib) vốn có fingerprint rất dễ bị nhận diện. Vì vậy ở đây ta:
+#  1) Tự fetch bằng `requests` với header đầy đủ giống trình duyệt thật.
+#  2) Đưa bytes đã tải về cho feedparser.parse() phân tích (thay vì để
+#     feedparser tự đi tải URL).
+#  3) KHÔNG nuốt lỗi im lặng — log rõ nguyên nhân (status code, exception)
+#     để chạy trên GitHub Actions vẫn thấy được trong log tại sao 1 nguồn
+#     không có tin, thay vì cứ trống bí ẩn.
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Referer": "https://www.google.com/",
+}
+
+
+@dataclass
+class FetchStatus:
+    source_name: str
+    url: str
+    ok: bool
+    entry_count: int = 0
+    error: str = ""
+
+
+def _fetch_one_feed(url: str, timeout: int = 12) -> "tuple[Optional[object], FetchStatus]":
+    status = FetchStatus(source_name="", url=url, ok=False)
     try:
-        return feedparser.parse(url, request_headers={"User-Agent": "Mozilla/5.0"})
-    except Exception:
-        return None
+        resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=timeout)
+        if resp.status_code != 200:
+            status.error = f"HTTP {resp.status_code}"
+            return None, status
+        parsed = feedparser.parse(resp.content)
+        if getattr(parsed, "bozo", 0) and not getattr(parsed, "entries", None):
+            # bozo=1 nghĩa là XML lỗi cú pháp; nếu vẫn có entries thì feed
+            # vẫn dùng được (nhiều RSS VN có XML hơi lỗi chuẩn nhưng đọc
+            # được bình thường), chỉ coi là lỗi thật khi KHÔNG có entries.
+            status.error = f"XML lỗi (bozo): {getattr(parsed, 'bozo_exception', '')}"
+            return None, status
+        entries = getattr(parsed, "entries", []) or []
+        if not entries:
+            status.error = "Feed hợp lệ nhưng 0 bài viết (có thể bị chặn/trả trang chặn)"
+            return None, status
+        status.ok = True
+        status.entry_count = len(entries)
+        return parsed, status
+    except requests.exceptions.SSLError as e:
+        status.error = f"Lỗi SSL: {e}"
+    except requests.exceptions.Timeout:
+        status.error = f"Timeout sau {timeout}s"
+    except requests.exceptions.ConnectionError as e:
+        status.error = f"Lỗi kết nối: {e}"
+    except Exception as e:  # noqa: BLE001 - muốn bắt hết để không crash cả pipeline
+        status.error = f"Lỗi không xác định: {e}"
+    return None, status
 
 
 def fetch_all_news(
     limit_per_feed: int = 25,
     detector: TickerDetector | None = None,
-) -> List[NewsItem]:
+    verbose: bool = True,
+) -> "tuple[List[NewsItem], List[FetchStatus]]":
     """Cào toàn bộ nguồn RSS, chuẩn hoá, gắn mã CK và khử trùng lặp.
 
     Args:
@@ -111,18 +170,37 @@ def fetch_all_news(
             thể chứa hàng chục tin, chỉ cần đủ để không sót tin quan trọng).
         detector: truyền vào từ ngoài để tái sử dụng universe đã cache;
             nếu None sẽ tự khởi tạo (gọi get_ticker_universe()).
+        verbose: in log từng nguồn ra stdout (hiện được trong log của
+            GitHub Actions) — bật mặc định vì im lặng bỏ qua lỗi chính là
+            lý do gây khó chẩn đoán trước đây.
+
+    Returns:
+        (danh sách tin, danh sách trạng thái fetch từng nguồn) — trạng
+        thái này giúp biết CHÍNH XÁC nguồn nào lỗi và vì sao, thay vì chỉ
+        thấy "không có tin Vietstock/VietnamBiz" mà không rõ nguyên nhân.
     """
     if detector is None:
         detector = TickerDetector(get_ticker_universe(), get_blacklist(), get_company_aliases())
 
     seen_titles: set[str] = set()
     all_items: List[NewsItem] = []
+    fetch_stats: List[FetchStatus] = []
 
     for category, sources in RSS_SOURCES.items():
         for source_name, url in sources.items():
-            feed = _fetch_one_feed(url)
-            if not feed or not getattr(feed, "entries", None):
+            feed, status = _fetch_one_feed(url)
+            status.source_name = source_name
+            fetch_stats.append(status)
+
+            if verbose:
+                if status.ok:
+                    print(f"[OK]   {source_name:30s} {status.entry_count:3d} bài  ({url})", file=sys.stderr)
+                else:
+                    print(f"[LỖI]  {source_name:30s} {status.error}  ({url})", file=sys.stderr)
+
+            if not status.ok or not feed:
                 continue
+
             for entry in feed.entries[:limit_per_feed]:
                 title = getattr(entry, "title", "").strip()
                 link = getattr(entry, "link", "").strip()
@@ -157,7 +235,11 @@ def fetch_all_news(
                     )
                 )
 
-    return all_items
+    if verbose:
+        n_ok = sum(1 for s in fetch_stats if s.ok)
+        print(f"\n=> {n_ok}/{len(fetch_stats)} nguồn fetch thành công, {len(all_items)} tin sau khi khử trùng lặp.", file=sys.stderr)
+
+    return all_items, fetch_stats
 
 
 def group_by_category(items: List[NewsItem]) -> Dict[str, List[NewsItem]]:
