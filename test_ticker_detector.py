@@ -11,12 +11,15 @@ from ticker_detector import TickerDetector
 FAKE_UNIVERSE = {
     "HPG": "HOSE", "VNM": "HOSE", "SSI": "HOSE", "FPT": "HOSE",
     "CEO": "HNX", "VND": "HOSE", "HCM": "HOSE", "TRA": "HOSE", "VGC": "HOSE",
+    "PGB": "UPCOM", "HTN": "HOSE",
 }
-BLACKLIST = {"GDP", "CPI", "FDI", "IMF", "TP"}
+BLACKLIST = {"GDP", "CPI", "FDI", "IMF", "TP", "TIN", "HOT", "LIVE", "NEW"}
 ALIASES = {
     "VGC": ["Viglacera"],
     "HPG": ["Hòa Phát", "Hoà Phát"],
     "VNM": ["Vinamilk"],
+    "PGB": ["PGBank", "PG Bank"],
+    "HTN": ["Hưng Thịnh Incons"],
 }
 
 detector = TickerDetector(FAKE_UNIVERSE, BLACKLIST, ALIASES)
@@ -46,6 +49,19 @@ cases = [
     # Không nên nhận nhầm khi "Hòa Phát" chỉ là một phần câu văn khác nghĩa
     # (kiểm tra alias vẫn đòi hỏi đúng cụm từ, không cắt giữa từ)
     ("Vinamilk công bố kết quả kinh doanh quý 2", "", "", {"VNM"}),
+    # Case thực tế người dùng phát hiện thêm (lần 2):
+    (
+        "PGBank tăng vốn điều lệ lên 7.327 tỷ đồng, tiếp tục củng cố nền tảng tài chính",
+        "", "", {"PGB"},
+    ),
+    (
+        "Hưng Thịnh Incons dự kiến phát hành cổ phiếu thưởng tỷ lệ 50%",
+        "", "", {"HTN"},
+    ),
+    # "TIN:" là tiền tố nhãn tin nhanh của CafeF, KHÔNG phải mã CK — và
+    # VinFast không có mã trên sàn VN (VFS niêm yết ở Nasdaq) nên tin này
+    # không được gắn mã nào cả.
+    ("TIN: Xe VF 2 mang tin vui bất ngờ về cho VinFast", "", "", set()),
 ]
 
 all_ok = True
