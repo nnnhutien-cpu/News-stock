@@ -77,6 +77,38 @@ rộng từ 1 nguồn lên 5 nguồn (CafeF, 2 feed của Vietstock, VnEconomy,
 VnExpress) để không bỏ sót các tin như "Phố Wall nhuốm sắc đỏ, Dow Jones
 giảm hơn 300 điểm".
 
+## Khi Vietstock/VietnamBiz không lấy được tin
+
+Nếu chạy `check_feeds.py` (hoặc xem khu vực "🔧 Trạng thái nguồn tin" trong
+app) mà thấy một nguồn báo lỗi:
+
+```bash
+python check_feeds.py
+```
+
+- **`HTTP 403` hoặc `0 bài viết`**: nhiều khả năng trang đặt sau
+  Cloudflare/WAF và chặn IP của máy chủ đang chạy script — phổ biến với
+  IP dùng chung của GitHub-hosted runner (rất hay bị các trang tin VN
+  chặn vì bị bot khác lạm dụng cùng dải IP). Trang vẫn mở bình thường
+  trên trình duyệt cá nhân **không** có nghĩa là server cũng truy cập
+  được — đây là 2 network path hoàn toàn khác nhau.
+  - Cách xử lý: (1) thử chạy lại sau vài giờ xem có phải chặn tạm thời;
+    (2) cân nhắc dùng self-hosted runner (máy cá nhân/VPS có IP dân dụng)
+    thay vì GitHub-hosted runner; (3) hoặc dùng dịch vụ proxy/RSS-bridge
+    trung gian để đổi IP nguồn request.
+- **`Timeout`**: mạng chậm hoặc trang đang quá tải — thường tự khỏi ở lần
+  chạy sau, không cần sửa gì.
+- **`Lỗi SSL`**: chứng chỉ trang tạm thời có vấn đề, hoặc runner thiếu
+  CA certificates cập nhật.
+- **`XML lỗi (bozo)`**: trang trả về nội dung không phải RSS hợp lệ (có
+  thể là trang lỗi/trang chặn dạng HTML thay vì XML) — thường đi kèm
+  nguyên nhân là bị chặn ở tầng trên, không phải lỗi code.
+
+`_fetch_one_feed()` trong `news_fetcher.py` đã được viết để KHÔNG nuốt
+lỗi im lặng: mọi lần chạy `fetch_all_news()` đều in log `[OK]`/`[LỖI]`
+kèm lý do cụ thể ra stderr — log này hiện đầy đủ trong tab Actions của
+GitHub khi chạy qua workflow.
+
 ## Giới hạn đã biết
 
 - Danh sách mã CK phụ thuộc `vnstock` khi có mạng; khi offline sẽ dùng
