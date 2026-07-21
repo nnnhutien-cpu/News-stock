@@ -67,6 +67,7 @@ FALLBACK_TICKERS: Dict[str, str] = {
     "PTB": "HOSE", "TRA": "HOSE", "THI": "HOSE", "OIL": "HOSE", "VGC": "HOSE",
     "VCG": "HOSE", "HVN": "HOSE", "HDG": "HOSE", "DPG": "HOSE", "DBC": "HOSE",
     "BMP": "HOSE", "BWE": "HOSE", "NT2": "HOSE", "GEG": "HOSE", "BHN": "HOSE",
+    "HTN": "HOSE",
     # HNX
     "SHS": "HNX", "PVS": "HNX", "PVI": "HNX", "VCS": "HNX", "CEO": "HNX",
     "IDC": "HNX", "TNG": "HNX", "NTP": "HNX", "L14": "HNX", "MBS": "HNX",
@@ -74,7 +75,7 @@ FALLBACK_TICKERS: Dict[str, str] = {
     # UPCOM
     "BSR": "UPCOM", "VGT": "UPCOM", "ACV": "UPCOM", "VEA": "UPCOM", "QNS": "UPCOM",
     "MSR": "UPCOM", "MCH": "UPCOM", "SIP": "UPCOM", "VGI": "UPCOM", "DVN": "UPCOM",
-    "FOX": "UPCOM", "VTP": "UPCOM", "DMX": "UPCOM",
+    "FOX": "UPCOM", "VTP": "UPCOM", "DMX": "UPCOM", "PGB": "UPCOM",
 }
 
 # Tên công ty (viết thường, không phân biệt hoa/thường khi so khớp) hay
@@ -157,6 +158,8 @@ FALLBACK_ALIASES: Dict[str, List[str]] = {
     "DGW": ["Digiworld"],
     "PTB": ["Phú Tài"],
     "TRA": ["Traphaco"],
+    "PGB": ["PGBank", "PG Bank", "Ngân hàng Xăng dầu Petrolimex"],
+    "HTN": ["Hưng Thịnh Incons"],
 }
 
 # Các token 3 chữ cái hay bị nhầm là mã CK nhưng thực chất là từ viết tắt
@@ -170,6 +173,10 @@ DEFAULT_BLACKLIST: Set[str] = {
     "WHO", "ILO", "NATO", "OPEC", "ASEAN", "APEC",
     "CFO", "CTO", "HR", "PR", "KOL", "SEO", "API",
     "ATM", "POS", "QR", "SMS", "OTP", "KYC", "ESG",
+    # Các tiền tố nhãn tin nhanh rất hay gặp ở đầu tiêu đề CafeF/Vietstock
+    # (VD: "TIN: Xe VF 2 mang tin vui...", "TIN: Địa ốc Kido..."), dễ bị
+    # nhận nhầm thành mã CK vì đúng 3 chữ hoa đứng độc lập ở đầu câu.
+    "TIN", "HOT", "LIVE", "NEW",
 }
 # Ghi chú: một vài mã trong FALLBACK_TICKERS (VD: CEO, VND, HCM) là MÃ THẬT
 # (CEO = C.E.O Group trên HNX, VND = Chứng khoán VNDirect, HCM = Chứng khoán
