@@ -31,6 +31,9 @@ news_sources.py       -> (giữ nguyên) cẩm nang nguồn dữ liệu, hiển 
 
 ## Cách nhận diện mã CK hoạt động
 
+Có 2 tầng nhận diện, chạy song song:
+
+**A. Theo mã (token viết hoa)**
 1. Chỉ xét token 3-4 chữ **IN HOA liên tục**, đứng độc lập (word boundary).
 2. Token phải nằm trong **whitelist mã CK thật** (không tự suy đoán).
 3. Loại các từ viết tắt phổ biến hay trùng (GDP, CPI, FDI, IMF...).
@@ -39,6 +42,17 @@ news_sources.py       -> (giữ nguyên) cẩm nang nguồn dữ liệu, hiển 
 5. Ưu tiên/đánh dấu độ tin cậy cao khi mã xuất hiện ngay sau "mã",
    "cổ phiếu", trong ngoặc đơn, hoặc trong slug URL
    (`cafef.vn/du-lieu/hose/hpg-...`, `finance.vietstock.vn/HPG/tin-tuc.htm`).
+
+**B. Theo tên công ty** *(quan trọng — vì phần lớn tin doanh nghiệp viết
+theo tên, không viết mã, ví dụ "Viglacera bổ nhiệm thêm một Phó Tổng
+giám đốc" không hề có chữ "VGC")*
+1. Bảng ánh xạ tên -> mã lấy từ `vnstock` (organ_name/organ_short_name)
+   khi online, luôn merge thêm `FALLBACK_ALIASES` (tên gọi tắt/thân mật
+   curate thủ công: "Viglacera", "Hòa Phát", "Vinamilk"...).
+2. So khớp cụm từ trọn vẹn, không phân biệt hoa/thường, có ranh giới từ
+   (không cắt giữa từ) trong tiêu đề + mô tả bài viết.
+3. Vì tên công ty là danh từ riêng khá đặc thù nên không cần đối chiếu
+   blacklist ở bước này.
 
 ## Chạy thử
 
@@ -52,6 +66,16 @@ Kiểm thử nhanh logic nhận diện (không cần mạng):
 ```bash
 python test_ticker_detector.py
 ```
+
+## Nguồn RSS
+
+Toàn bộ URL RSS trong `news_fetcher.py` đã được xác minh trực tiếp từ
+trang "RSS Feeds" chính thức của từng báo (`cafef.vn/rss.chn`,
+`vietstock.vn/rss`, `vneconomy.vn/rss.html`) — không phải suy đoán theo
+mẫu URL, để tránh feed 404/rỗng do sai slug. Mục **THẾ GIỚI** được mở
+rộng từ 1 nguồn lên 5 nguồn (CafeF, 2 feed của Vietstock, VnEconomy,
+VnExpress) để không bỏ sót các tin như "Phố Wall nhuốm sắc đỏ, Dow Jones
+giảm hơn 300 điểm".
 
 ## Giới hạn đã biết
 
