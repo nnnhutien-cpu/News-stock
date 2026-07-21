@@ -11,6 +11,8 @@ on:
   
   # Cho phép bạn bấm nút chạy thủ công bất cứ lúc nào
   workflow_dispatch:
+permissions:
+  contents: write
 
 jobs:
   scrape_news:
