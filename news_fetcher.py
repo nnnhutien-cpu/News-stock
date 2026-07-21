@@ -29,28 +29,41 @@ from typing import Dict, List
 import feedparser
 
 from ticker_detector import TickerDetector
-from ticker_universe import get_blacklist, get_ticker_universe
+from ticker_universe import get_blacklist, get_company_aliases, get_ticker_universe
 
 # {category: {source_name: rss_url}}
+# LƯU Ý: toàn bộ URL dưới đây đã được xác minh trực tiếp từ trang "RSS Feeds"
+# chính thức của từng báo (cafef.vn/rss.chn, vietstock.vn/rss, vneconomy.vn/rss.html)
+# — không phải URL đoán theo mẫu như bản trước, nên tránh được tình trạng feed
+# 404/rỗng do sai slug.
 RSS_SOURCES: Dict[str, Dict[str, str]] = {
     "THẾ GIỚI": {
+        # Đây là nhóm quan trọng nhất để bắt các tin kiểu "Phố Wall nhuốm sắc
+        # đỏ, Dow Jones giảm hơn 300 điểm" — trước đây chỉ có 1 nguồn (CafeF)
+        # nên rất dễ bỏ sót nếu CafeF chưa kịp đăng hoặc đăng ở mục khác.
         "CafeF": "https://cafef.vn/tai-chinh-quoc-te.rss",
-        "Vietstock": "https://vietstock.vn/rss/the-gioi.rss",
-        "VnEconomy": "https://vneconomy.vn/rss/the-gioi.rss",
-        "VnExpress": "https://vnexpress.net/rss/the-gioi.rss",
+        "Vietstock (CK thế giới)": "https://vietstock.vn/773/the-gioi/chung-khoan-the-gioi.rss",
+        "Vietstock (TC quốc tế)": "https://vietstock.vn/772/the-gioi/tai-chinh-quoc-te.rss",
+        "VnEconomy": "https://vneconomy.vn/kinh-te-the-gioi.rss",
+        "VnExpress": "https://vnexpress.net/rss/kinh-doanh.rss",  # có mục con quốc tế trong nội dung
     },
     "TIN TỨC": {  # tin vĩ mô, thị trường chung trong nước
-        "CafeF": "https://cafef.vn/vi-mo-dau-tu.rss",
-        "Vietstock": "https://vietstock.vn/rss/vi-mo.rss",
-        "VnEconomy": "https://vneconomy.vn/rss/tai-chinh.rss",
-        "VnExpress": "https://vnexpress.net/rss/kinh-doanh.rss",
-        "VietnamBiz": "https://vietnambiz.vn/rss/tai-chinh.rss",
+        "CafeF (vĩ mô)": "https://cafef.vn/vi-mo-dau-tu.rss",
+        "CafeF (TT chứng khoán)": "https://cafef.vn/thi-truong-chung-khoan.rss",
+        "Vietstock (vĩ mô)": "https://vietstock.vn/761/kinh-te/vi-mo.rss",
+        "Vietstock (cổ phiếu)": "https://vietstock.vn/830/chung-khoan/co-phieu.rss",
+        "VnEconomy (chứng khoán)": "https://vneconomy.vn/chung-khoan.rss",
+        "VnEconomy (tài chính)": "https://vneconomy.vn/tai-chinh.rss",
+        "VietnamBiz (tài chính)": "https://vietnambiz.vn/tai-chinh.rss",
+        "VietnamBiz (chứng khoán)": "https://vietnambiz.vn/chung-khoan.rss",
     },
     "DOANH NGHIỆP": {
         "CafeF": "https://cafef.vn/doanh-nghiep.rss",
-        "Vietstock": "https://vietstock.vn/rss/doanh-nghiep.rss",
+        "Vietstock (HĐ kinh doanh)": "https://vietstock.vn/737/doanh-nghiep/hoat-dong-kinh-doanh.rss",
+        "Vietstock (cổ tức)": "https://vietstock.vn/738/doanh-nghiep/co-tuc.rss",
+        "Vietstock (tăng vốn - M&A)": "https://vietstock.vn/764/doanh-nghiep/tang-von-m-a.rss",
         "TNCK": "https://www.tinnhanhchungkhoan.vn/rss/doanh-nghiep-2.rss",
-        "VietnamBiz": "https://vietnambiz.vn/rss/doanh-nghiep.rss",
+        "VietnamBiz": "https://vietnambiz.vn/doanh-nghiep.rss",
     },
 }
 
@@ -100,7 +113,7 @@ def fetch_all_news(
             nếu None sẽ tự khởi tạo (gọi get_ticker_universe()).
     """
     if detector is None:
-        detector = TickerDetector(get_ticker_universe(), get_blacklist())
+        detector = TickerDetector(get_ticker_universe(), get_blacklist(), get_company_aliases())
 
     seen_titles: set[str] = set()
     all_items: List[NewsItem] = []
