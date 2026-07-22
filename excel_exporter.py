@@ -36,7 +36,7 @@ def build_excel_bytes(grouped: dict) -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active
     today = datetime.now().strftime("%d/%m/%Y")
-    ws.title = f"Bản tin {today}"
+    ws.title = f"Ban tin {today}"
 
     # Độ rộng cột
     ws.column_dimensions["A"].width = 3   # bullet / lề
