@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+tickers_cache.json
+sectors_cache.json
+tin_tuc_chung_khoan.csv
+daily_news.json
