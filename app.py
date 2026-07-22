@@ -17,7 +17,7 @@ Bố cục:
 from __future__ import annotations
 
 import io
-
+from excel_exporter import build_excel_bytes
 import pandas as pd
 import streamlit as st
 
@@ -166,6 +166,15 @@ def main():
         file_name="tin_tuc_chung_khoan.csv",
         mime="text/csv",
     )
+    # Nút xuất Excel bản tin
+    xlsx_bytes = build_excel_bytes(grouped)
+    st.download_button(
+        "📋 Xuất Excel bản tin",
+        data=xlsx_bytes,
+        file_name=f"ban_tin_{pd.Timestamp.now().strftime('%Y-%m-%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+  
 
     # Khu vực debug: hiển thị trạng thái fetch từng nguồn RSS ngay trên UI,
     # để thấy CHÍNH XÁC nguồn nào lỗi (403 do chặn bot, timeout, XML hỏng...)
