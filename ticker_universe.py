@@ -327,6 +327,60 @@ def _merge_aliases(
 SECTOR_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sectors_cache.json")
 
 # ---------------------------------------------------------------------------
+# Bảng NHÃN NGÀNH GỘP NHÓM — chính là bộ 14 ngành đã dùng trong file Colab
+# trước đó (Ngân hàng, Chứng khoán, Bất động sản...). Dữ liệu ngành thật lấy
+# từ vnstock có 4 cấp ICB (icb_name1..4) khá chi tiết/rời rạc (VD: "Tài
+# nguyên cơ bản" thay vì "Thép", "Điện, nước & xăng dầu khí đốt" thay vì
+# "Điện - Tiện ích"...) nên cần một tầng ÁNH XẠ theo từ khoá để gộp về đúng
+# bộ nhãn quen thuộc này thay vì hiển thị thẳng tên ICB gốc.
+#
+# Cách hoạt động: với mỗi mã, ghép toàn bộ icb_name1..4 thành 1 chuỗi, rồi
+# duyệt SECTOR_KEYWORD_MAP theo THỨ TỰ (quan trọng — đặt từ khoá đặc thù
+# trước để tránh đè nhầm, VD "ngân hàng" phải check trước "tài chính" nói
+# chung). Khớp từ khoá đầu tiên -> gán nhãn ngành gộp tương ứng. Không khớp
+# gì -> "Khác".
+# ---------------------------------------------------------------------------
+SECTOR_KEYWORD_MAP: "list[tuple[str, list[str]]]" = [
+    ("Ngân hàng", ["ngân hàng"]),
+    ("Bảo hiểm", ["bảo hiểm"]),
+    ("Chứng khoán", ["chứng khoán", "môi giới"]),
+    ("Bất động sản", ["bất động sản", "kinh doanh nhà"]),
+    ("Bán lẻ", ["bán lẻ"]),
+    ("Thép", ["thép", "tài nguyên cơ bản", "kim loại"]),
+    ("Hoá chất", ["hóa chất", "hoá chất"]),
+    # QUAN TRỌNG: kiểm tra "Điện - Tiện ích" TRƯỚC "Dầu khí", vì tên ICB gộp
+    # nhóm tiện ích ở VN thường là "Điện, nước & xăng dầu khí đốt" — chuỗi
+    # này chứa cả từ "dầu khí" lẫn "điện". Nếu check "Dầu khí" trước sẽ gán
+    # nhầm công ty điện/nước vào nhóm Dầu khí. Công ty dầu khí thuần (GAS,
+    # PVD, PVS...) có tên ICB chỉ là "Dầu khí", không chứa "điện" -> vẫn rơi
+    # đúng vào "Dầu khí" ở bước kiểm tra kế tiếp, không bị ảnh hưởng.
+    ("Điện - Tiện ích", ["điện, nước", "điện, khí đốt", "tiện ích", "năng lượng tái tạo"]),
+    ("Dầu khí", ["dầu khí", "xăng dầu"]),
+    ("Hàng không - Logistics", ["hàng không", "vận tải", "logistics", "cảng biển", "kho bãi"]),
+    ("Thực phẩm - Đồ uống", ["thực phẩm", "đồ uống", "thủy sản", "thuỷ sản", "chăn nuôi"]),
+    ("Xây dựng - VLXD", ["xây dựng", "vật liệu xây dựng", "vlxd", "nhựa", "xi măng"]),
+    ("Công nghệ - Viễn thông", ["công nghệ thông tin", "công nghệ", "phần mềm", "viễn thông"]),
+    ("Điện - Tiện ích", ["điện", "nước", "khí đốt"]),  # bắt các trường hợp còn sót (chỉ 1 từ đơn lẻ)
+    ("Cao su - Nông nghiệp", ["cao su", "nông nghiệp", "trồng trọt", "lâm nghiệp"]),
+    ("Y tế - Dược phẩm", ["y tế", "dược phẩm", "dược"]),
+    ("Bán buôn - Thương mại", ["bán buôn", "thương mại"]),
+]
+
+
+def map_to_grouped_sector(icb_names: "list[str]") -> str:
+    """Ánh xạ danh sách tên ICB gốc (icb_name1..4) về 1 nhãn ngành gộp nhóm
+    trong bộ 14+1 ngành quen thuộc (giống file Colab). Trả về 'Khác' nếu
+    không khớp từ khoá nào."""
+    joined = " | ".join(n for n in icb_names if n).lower()
+    if not joined:
+        return "Khác"
+    for grouped_label, keywords in SECTOR_KEYWORD_MAP:
+        if any(kw in joined for kw in keywords):
+            return grouped_label
+    return "Khác"
+
+
+# ---------------------------------------------------------------------------
 # Bảng ngành dự phòng (~85 mã) khi KHÔNG có mạng / vnstock lỗi. Đây KHÔNG
 # phải danh sách đầy đủ ~1600+ mã — nguồn đầy đủ & chính xác luôn là API
 # phân ngành ICB thật của vnstock (get_ticker_sectors() bên dưới), lấy từ
@@ -403,7 +457,9 @@ def _save_sector_cache(sectors: Dict[str, dict]) -> None:
 
 
 def _fetch_sectors_from_vnstock() -> Optional[Dict[str, dict]]:
-    """Lấy phân ngành ICB đầy đủ (~1600+ mã) từ vnstock (nguồn VCI/Vietcap).
+    """Lấy phân ngành ICB đầy đủ (~1600+ mã) từ vnstock (nguồn VCI/Vietcap),
+    rồi ÁNH XẠ về bộ nhãn ngành gộp nhóm quen thuộc (Ngân hàng, Chứng khoán,
+    Bất động sản, Bán lẻ, Thép, Dầu khí...) qua map_to_grouped_sector().
 
     API xác nhận tồn tại trong vnstock >= 3.x:
         from vnstock import Listing
@@ -411,8 +467,9 @@ def _fetch_sectors_from_vnstock() -> Optional[Dict[str, dict]]:
     trả về DataFrame với các cột symbol, icb_name1..4 (Ngành cấp 1 rộng nhất
     -> cấp 4 chi tiết nhất theo chuẩn ICB), icb_code1..4, organ_name...
 
-    Trả về dict {ticker: {"sector": <icb_name3, fallback 2/4/1>,
-                            "sector_l1": ..., "sector_l4": ..., "organ_name": ...}}
+    Trả về dict {ticker: {"sector": <nhãn ngành gộp nhóm>,
+                            "icb_name1..4": <tên ICB gốc để tham khảo>,
+                            "organ_name": ...}}
     hoặc None nếu lỗi (không có mạng, đổi API, chưa cài vnstock...).
     """
     try:
@@ -426,12 +483,8 @@ def _fetch_sectors_from_vnstock() -> Optional[Dict[str, dict]]:
         if ticker_col is None:
             return None
 
-        # icb_name3 (Sector - mức trung bình, gần với "Ngân hàng", "Bán lẻ",
-        # "Chứng khoán"...) là lựa chọn mặc định hợp lý nhất cho việc gom
-        # nhóm hiển thị; nếu thiếu thì lùi dần về các cấp còn lại.
-        level_priority = ["icb_name3", "icb_name2", "icb_name4", "icb_name1"]
-        level_cols = [cols[lv] for lv in level_priority if lv in cols]
-        if not level_cols:
+        icb_level_cols = [cols[lv] for lv in ("icb_name1", "icb_name2", "icb_name3", "icb_name4") if lv in cols]
+        if not icb_level_cols:
             return None
 
         organ_col = cols.get("organ_name") or cols.get("organname")
@@ -441,18 +494,18 @@ def _fetch_sectors_from_vnstock() -> Optional[Dict[str, dict]]:
             t = str(row[ticker_col]).strip().upper()
             if not t or len(t) > 4 or not t.isalpha():
                 continue
-            sector = ""
-            for lc in level_cols:
-                val = row.get(lc)
-                if val and isinstance(val, str) and val.strip():
-                    sector = val.strip()
-                    break
-            entry = {"sector": sector or "Chưa phân loại"}
-            for lv in ("icb_name1", "icb_name2", "icb_name3", "icb_name4"):
-                if lv in cols:
-                    v = row.get(cols[lv])
-                    if v and isinstance(v, str):
-                        entry[lv] = v.strip()
+
+            raw_names = []
+            entry = {}
+            for lv, lc in zip(("icb_name1", "icb_name2", "icb_name3", "icb_name4"), icb_level_cols):
+                v = row.get(lc)
+                if v and isinstance(v, str) and v.strip():
+                    v = v.strip()
+                    raw_names.append(v)
+                    entry[lv] = v
+
+            entry["sector"] = map_to_grouped_sector(raw_names)
+
             if organ_col:
                 v = row.get(organ_col)
                 if v and isinstance(v, str) and v.strip():
