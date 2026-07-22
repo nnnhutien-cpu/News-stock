@@ -167,15 +167,38 @@ def main():
         file_name="tin_tuc_chung_khoan.csv",
         mime="text/csv",
     )
-    # Nút xuất Excel ban tin
-    xlsx_bytes = build_excel_bytes(grouped)
-    st.download_button(
-        "📋 Xuất Excel ban tin",
-        data=xlsx_bytes,
-        file_name=f"ban_tin_{pd.Timestamp.now().strftime('%Y-%m-%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # ── Xuất Excel theo ngày ──────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 📅 Xuất Excel bản tin theo ngày")
+
+    # Lấy danh sách ngày có trong tin
+    all_dates = sorted(
+        set(it.published[:10] for it in items if it.published),
+        reverse=True
     )
-  
+
+    if all_dates:
+        selected_date = st.selectbox(
+            "Chọn ngày:",
+            options=all_dates,
+            index=0,
+        )
+
+        # Lọc items theo ngày đã chọn
+        items_by_date = [it for it in items if it.published and it.published[:10] == selected_date]
+        grouped_by_date = group_by_category(items_by_date)
+
+        st.caption(f"Có **{len(items_by_date)} tin** trong ngày {selected_date}")
+
+        xlsx_bytes = build_excel_bytes(grouped_by_date)
+        st.download_button(
+            f"📋 Tải Excel ngày {selected_date}",
+            data=xlsx_bytes,
+            file_name=f"ban_tin_{selected_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    else:
+        st.caption("Không có dữ liệu để xuất.")
 
     # Khu vực debug: hiển thị trạng thái fetch từng nguồn RSS ngay trên UI,
     # để thấy CHÍNH XÁC nguồn nào lỗi (403 do chặn bot, timeout, XML hỏng...)
