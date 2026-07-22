@@ -35,7 +35,7 @@ def build_excel_bytes(grouped: dict) -> bytes:
     """
     wb = openpyxl.Workbook()
     ws = wb.active
-    today = datetime.now().strftime("%d/%m/%Y")
+    today = datetime.now().strftime("%d-%m-%Y")
     ws.title = f"Ban tin {today}"
 
     # Độ rộng cột
