@@ -49,9 +49,18 @@ def load_sector_map():
     return get_ticker_sectors()
 
 
-@st.cache_data(ttl=900)  # 15 phút, giống chu kỳ cập nhật của bản cũ
+@st.cache_data(ttl=900)
 def load_news(_detector: TickerDetector, _sector_map: dict):
+    from datetime import datetime, timedelta
+    from email.utils import parsedate_to_datetime
     items, fetch_stats = fetch_all_news(detector=_detector, sector_map=_sector_map, verbose=True)
+    cutoff = datetime.now().astimezone() - timedelta(days=3)
+    def is_recent(it):
+        try:
+            return parsedate_to_datetime(it.published) >= cutoff
+        except Exception:
+            return True  # giữ lại nếu không parse được
+    items = [it for it in items if is_recent(it)]
     return items, fetch_stats
 
 
