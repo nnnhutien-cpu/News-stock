@@ -67,6 +67,38 @@ Kiểm thử nhanh logic nhận diện (không cần mạng):
 python test_ticker_detector.py
 ```
 
+## Phân loại theo ngành (tab "Doanh nghiệp theo ngành")
+
+`ticker_universe.get_ticker_sectors()` lấy phân ngành **ICB thật** (chuẩn
+quốc tế, do VCI/Vietcap cung cấp qua vnstock) cho toàn bộ ~1600+ mã trên
+HOSE/HNX/UPCOM — KHÔNG dùng danh sách hardcode, vì gõ tay 1000+ mã ở quy
+mô này chắc chắn sẽ có sai sót/lỗi thời. Cụ thể:
+
+```python
+from vnstock import Listing
+Listing().symbols_by_industries()
+```
+
+trả về DataFrame gồm `symbol`, `icb_name1` (ngành cấp 1, rộng nhất) đến
+`icb_name4` (chi tiết nhất), `organ_name`... Hệ thống dùng `icb_name3`
+làm mặc định (gần với "Ngân hàng", "Bán lẻ", "Chứng khoán" — đúng độ
+chi tiết người dùng thường muốn), lùi dần về các cấp khác nếu thiếu.
+
+Cache riêng vào `sectors_cache.json` (TTL 24h, không commit vào git —
+xem `.gitignore`). Khi offline/vnstock lỗi, dùng `SECTOR_FALLBACK` (~85
+mã) để tab ngành không trắng hoàn toàn, nhưng đây chỉ là bản rút gọn.
+
+**Vì sao không dùng KB / Yahoo Finance để bổ sung ngành?**
+- Yahoo Finance có dữ liệu ngành (`sector`/`industry`) nhưng độ phủ mã CK
+  Việt Nam trên Yahoo rất thưa (chỉ vài chục mã lớn có suffix `.VN`,
+  thiếu hầu hết UPCOM/HNX), và phân ngành theo chuẩn GICS của Mỹ thay vì
+  ICB — không khớp với cách thị trường VN đang dùng.
+- Không tìm thấy API công khai, miễn phí, ổn định của "KB" (KB Securities
+  Việt Nam) cho dữ liệu phân ngành hàng loạt qua mã.
+- `vnstock` (nguồn VCI/Vietcap) là nguồn duy nhất trong 3 nguồn được nêu
+  có API chính thức, miễn phí, trả về phân ngành ICB đầy đủ theo mã cho
+  toàn bộ 3 sàn — nên được chọn làm nguồn chính.
+
 ## Nguồn RSS
 
 Toàn bộ URL RSS trong `news_fetcher.py` đã được xác minh trực tiếp từ
