@@ -73,16 +73,24 @@ def build_excel_bytes(grouped: dict) -> bytes:
 
         # ── Danh sách tin ────────────────────────────────────────────────
         for it in items:
-            # Cột A: bullet
-            bc = ws[f"A{row}"]
-            bc.value = "•"
-            bc.font = Font(name="Arial", size=10, color="555555")
-            bc.alignment = Alignment(horizontal="center", vertical="top")
+            # Cột A: ngày
+            ac = ws[f"A{row}"]
+            ac.value = it.published[:10] if it.published else ""
+            ac.font = Font(name="Arial", size=10, color="888888")
+            ac.alignment = Alignment(horizontal="center", vertical="top")
+            ac.border = border_bottom
 
-            # Cột B: tiêu đề (+ mã CK nếu có)
-            ticker_tag = f"  [{'/'.join(it.tickers)}]" if it.tickers else ""
-            tc = ws[f"B{row}"]
-            tc.value = it.title + ticker_tag
+            # Cột B: mã CK
+            bc = ws[f"B{row}"]
+            bc.value = "/".join(it.tickers) if it.tickers else ""
+            bc.font = Font(name="Arial", size=10, color="1F497D", bold=True)
+            bc.alignment = Alignment(horizontal="center", vertical="top")
+            bc.border = border_bottom
+
+            # Cột C: mã CK + tiêu đề
+            ticker_prefix = f"{'/'.join(it.tickers)}: " if it.tickers else ""
+            tc = ws[f"C{row}"]
+            tc.value = ticker_prefix + it.title
             tc.font = Font(name="Arial", size=10, color="1A1A1A")
             tc.alignment = Alignment(horizontal="left", vertical="top",
                                      wrap_text=True)
@@ -92,12 +100,15 @@ def build_excel_bytes(grouped: dict) -> bytes:
 
         row += 1  # dòng trống giữa nhóm
 
+    # Bật AutoFilter
+    ws.auto_filter.ref = f"A1:C{row}"
+
     # ── Footer ───────────────────────────────────────────────────────────
-    ws[f"B{row}"].value = (
+    ws[f"C{row}"].value = (
         f"Nguồn: CafeF · Vietstock · VnExpress · VnEconomy · VietnamBiz  |  "
         f"Cập nhật: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     )
-    ws[f"B{row}"].font = Font(name="Arial", size=9, italic=True, color="AAAAAA")
+    ws[f"C{row}"].font = Font(name="Arial", size=9, italic=True, color="AAAAAA")
 
     # Xuất ra bytes
     buf = io.BytesIO()
