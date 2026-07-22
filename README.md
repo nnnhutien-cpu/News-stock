@@ -80,13 +80,29 @@ Listing().symbols_by_industries()
 ```
 
 trả về DataFrame gồm `symbol`, `icb_name1` (ngành cấp 1, rộng nhất) đến
-`icb_name4` (chi tiết nhất), `organ_name`... Hệ thống dùng `icb_name3`
-làm mặc định (gần với "Ngân hàng", "Bán lẻ", "Chứng khoán" — đúng độ
-chi tiết người dùng thường muốn), lùi dần về các cấp khác nếu thiếu.
+`icb_name4` (chi tiết nhất), `organ_name`...
+
+**Tầng ánh xạ về nhãn ngành gộp nhóm** (`SECTOR_KEYWORD_MAP` +
+`map_to_grouped_sector()`): tên ICB gốc khá rời rạc/chi tiết (VD: "Tài
+nguyên cơ bản" thay vì "Thép", "Điện, nước & xăng dầu khí đốt" thay vì
+"Điện - Tiện ích"), nên hệ thống ghép `icb_name1..4` thành 1 chuỗi rồi
+so khớp từ khoá theo thứ tự ưu tiên để gộp về đúng bộ ~16 nhãn ngành quen
+thuộc (giống bản Colab trước đó: Ngân hàng, Chứng khoán, Bất động sản,
+Bán lẻ, Thép, Hoá chất, Điện - Tiện ích, Dầu khí, Hàng không - Logistics,
+Thực phẩm - Đồ uống, Xây dựng - VLXD, Công nghệ - Viễn thông, Cao su -
+Nông nghiệp, Bảo hiểm, và bổ sung thêm Y tế - Dược phẩm, Bán buôn - Thương
+mại cho các công ty không khớp 12 nhóm ban đầu). Mã không khớp từ khoá
+nào rơi vào `"Khác"`.
+
+Thứ tự trong `SECTOR_KEYWORD_MAP` quan trọng — từ khoá đặc thù/dễ gây
+nhầm lẫn được đặt ưu tiên trước (VD: "Điện - Tiện ích" phải check trước
+"Dầu khí" vì tên ICB gộp tiện ích VN thường chứa cả cụm "xăng dầu khí
+đốt", nếu check "Dầu khí" trước sẽ gán nhầm công ty điện/nước).
 
 Cache riêng vào `sectors_cache.json` (TTL 24h, không commit vào git —
 xem `.gitignore`). Khi offline/vnstock lỗi, dùng `SECTOR_FALLBACK` (~85
-mã) để tab ngành không trắng hoàn toàn, nhưng đây chỉ là bản rút gọn.
+mã, đã dùng sẵn đúng bộ nhãn gộp nhóm này) để tab ngành không trắng hoàn
+toàn, nhưng đây chỉ là bản rút gọn.
 
 **Vì sao không dùng KB / Yahoo Finance để bổ sung ngành?**
 - Yahoo Finance có dữ liệu ngành (`sector`/`industry`) nhưng độ phủ mã CK
