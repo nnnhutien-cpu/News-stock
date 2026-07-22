@@ -166,10 +166,10 @@ def main():
         file_name="tin_tuc_chung_khoan.csv",
         mime="text/csv",
     )
-    # Nút xuất Excel bản tin
+    # Nút xuất Excel ban tin
     xlsx_bytes = build_excel_bytes(grouped)
     st.download_button(
-        "📋 Xuất Excel bản tin",
+        "📋 Xuất Excel ban tin",
         data=xlsx_bytes,
         file_name=f"ban_tin_{pd.Timestamp.now().strftime('%Y-%m-%d')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
