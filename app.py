@@ -57,7 +57,7 @@ def load_news(_detector: TickerDetector, _sector_map: dict):
 
 def render_news_list(items, max_rows: int = 60):
     for it in items[:max_rows]:
-        ticker_tag = f"**`{'/'.join(it.tickers)}`** " if it.tickers else ""
+        ticker_tag = f"{'/'.join(it.tickers)}: " if it.tickers else ""
         st.markdown(
             f"- {ticker_tag}{it.title}  \n"
             f"  <small>[🔗 Đọc bài]({it.link}) · {it.source} · {it.published}</small>",
