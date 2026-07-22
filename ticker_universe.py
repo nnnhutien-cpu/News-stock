@@ -324,5 +324,171 @@ def _merge_aliases(
     return merged
 
 
+SECTOR_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sectors_cache.json")
+
+# ---------------------------------------------------------------------------
+# Bảng ngành dự phòng (~85 mã) khi KHÔNG có mạng / vnstock lỗi. Đây KHÔNG
+# phải danh sách đầy đủ ~1600+ mã — nguồn đầy đủ & chính xác luôn là API
+# phân ngành ICB thật của vnstock (get_ticker_sectors() bên dưới), lấy từ
+# VCI (Vietcap) qua vnstock.Listing().symbols_by_industries(). Bảng này chỉ
+# để app không "trắng ngành" khi mất mạng hoàn toàn.
+# ---------------------------------------------------------------------------
+SECTOR_FALLBACK: Dict[str, str] = {
+    # Ngân hàng
+    "ACB": "Ngân hàng", "BID": "Ngân hàng", "CTG": "Ngân hàng", "EIB": "Ngân hàng",
+    "HDB": "Ngân hàng", "LPB": "Ngân hàng", "MBB": "Ngân hàng", "OCB": "Ngân hàng",
+    "PGB": "Ngân hàng", "SHB": "Ngân hàng", "SSB": "Ngân hàng", "STB": "Ngân hàng",
+    "TCB": "Ngân hàng", "TPB": "Ngân hàng", "VCB": "Ngân hàng", "VIB": "Ngân hàng",
+    "VPB": "Ngân hàng",
+    # Chứng khoán
+    "SSI": "Chứng khoán", "VND": "Chứng khoán", "HCM": "Chứng khoán", "VCI": "Chứng khoán",
+    "MBS": "Chứng khoán", "SHS": "Chứng khoán", "VIX": "Chứng khoán",
+    # Bất động sản
+    "VIC": "Bất động sản", "VHM": "Bất động sản", "VRE": "Bất động sản", "NVL": "Bất động sản",
+    "DXG": "Bất động sản", "KDH": "Bất động sản", "NLG": "Bất động sản", "PDR": "Bất động sản",
+    "DIG": "Bất động sản", "KBC": "Bất động sản", "IDC": "Bất động sản", "HDG": "Bất động sản",
+    "CII": "Bất động sản", "BCM": "Bất động sản",
+    # Bán lẻ
+    "MWG": "Bán lẻ", "PNJ": "Bán lẻ", "FRT": "Bán lẻ", "DGW": "Bán lẻ",
+    # Thép
+    "HPG": "Thép", "HSG": "Thép", "NKG": "Thép",
+    # Dầu khí
+    "GAS": "Dầu khí", "PLX": "Dầu khí", "PVD": "Dầu khí", "PVT": "Dầu khí",
+    "PVS": "Dầu khí", "BSR": "Dầu khí",
+    # Hoá chất
+    "DGC": "Hoá chất", "DPM": "Hoá chất", "DCM": "Hoá chất",
+    # Hàng không - Logistics
+    "VJC": "Hàng không - Logistics", "HVN": "Hàng không - Logistics",
+    "GMD": "Hàng không - Logistics", "ACV": "Hàng không - Logistics",
+    # Thực phẩm - Đồ uống
+    "VNM": "Thực phẩm - Đồ uống", "SAB": "Thực phẩm - Đồ uống", "BHN": "Thực phẩm - Đồ uống",
+    "MSN": "Thực phẩm - Đồ uống", "QNS": "Thực phẩm - Đồ uống", "VHC": "Thực phẩm - Đồ uống",
+    "ANV": "Thực phẩm - Đồ uống",
+    # Xây dựng - VLXD
+    "VGC": "Xây dựng - VLXD", "VCG": "Xây dựng - VLXD", "BMP": "Xây dựng - VLXD",
+    "HTN": "Xây dựng - VLXD", "PTB": "Xây dựng - VLXD",
+    # Công nghệ - Viễn thông
+    "FPT": "Công nghệ - Viễn thông", "FOX": "Công nghệ - Viễn thông",
+    "VGI": "Công nghệ - Viễn thông", "VTP": "Công nghệ - Viễn thông",
+    # Điện - Tiện ích
+    "POW": "Điện - Tiện ích", "NT2": "Điện - Tiện ích", "GEG": "Điện - Tiện ích",
+    "BWE": "Điện - Tiện ích", "PC1": "Điện - Tiện ích",
+    # Bảo hiểm
+    "BVH": "Bảo hiểm",
+    # Cao su - Nông nghiệp
+    "GVR": "Cao su - Nông nghiệp", "HAG": "Cao su - Nông nghiệp",
+    "HNG": "Cao su - Nông nghiệp", "DBC": "Cao su - Nông nghiệp",
+}
+
+
+def _load_sector_cache() -> Optional[dict]:
+    if not os.path.exists(SECTOR_CACHE_PATH):
+        return None
+    try:
+        with open(SECTOR_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if time.time() - data.get("_fetched_at", 0) > CACHE_TTL_SECONDS:
+            return None
+        return data.get("sectors")
+    except Exception:
+        return None
+
+
+def _save_sector_cache(sectors: Dict[str, dict]) -> None:
+    try:
+        with open(SECTOR_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"_fetched_at": time.time(), "sectors": sectors}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _fetch_sectors_from_vnstock() -> Optional[Dict[str, dict]]:
+    """Lấy phân ngành ICB đầy đủ (~1600+ mã) từ vnstock (nguồn VCI/Vietcap).
+
+    API xác nhận tồn tại trong vnstock >= 3.x:
+        from vnstock import Listing
+        Listing().symbols_by_industries()
+    trả về DataFrame với các cột symbol, icb_name1..4 (Ngành cấp 1 rộng nhất
+    -> cấp 4 chi tiết nhất theo chuẩn ICB), icb_code1..4, organ_name...
+
+    Trả về dict {ticker: {"sector": <icb_name3, fallback 2/4/1>,
+                            "sector_l1": ..., "sector_l4": ..., "organ_name": ...}}
+    hoặc None nếu lỗi (không có mạng, đổi API, chưa cài vnstock...).
+    """
+    try:
+        from vnstock import Listing  # vnstock >= 3.x
+
+        listing = Listing()
+        df = listing.symbols_by_industries()
+
+        cols = {c.lower(): c for c in df.columns}
+        ticker_col = cols.get("symbol") or cols.get("ticker")
+        if ticker_col is None:
+            return None
+
+        # icb_name3 (Sector - mức trung bình, gần với "Ngân hàng", "Bán lẻ",
+        # "Chứng khoán"...) là lựa chọn mặc định hợp lý nhất cho việc gom
+        # nhóm hiển thị; nếu thiếu thì lùi dần về các cấp còn lại.
+        level_priority = ["icb_name3", "icb_name2", "icb_name4", "icb_name1"]
+        level_cols = [cols[lv] for lv in level_priority if lv in cols]
+        if not level_cols:
+            return None
+
+        organ_col = cols.get("organ_name") or cols.get("organname")
+
+        result: Dict[str, dict] = {}
+        for _, row in df.iterrows():
+            t = str(row[ticker_col]).strip().upper()
+            if not t or len(t) > 4 or not t.isalpha():
+                continue
+            sector = ""
+            for lc in level_cols:
+                val = row.get(lc)
+                if val and isinstance(val, str) and val.strip():
+                    sector = val.strip()
+                    break
+            entry = {"sector": sector or "Chưa phân loại"}
+            for lv in ("icb_name1", "icb_name2", "icb_name3", "icb_name4"):
+                if lv in cols:
+                    v = row.get(cols[lv])
+                    if v and isinstance(v, str):
+                        entry[lv] = v.strip()
+            if organ_col:
+                v = row.get(organ_col)
+                if v and isinstance(v, str) and v.strip():
+                    entry["organ_name"] = v.strip()
+            result[t] = entry
+        return result or None
+    except Exception:
+        return None
+
+
+def get_ticker_sectors(force_refresh: bool = False) -> Dict[str, dict]:
+    """Trả về dict {MÃ: {"sector": <tên ngành>, ...}} đầy đủ nhất có thể.
+
+    Ưu tiên: cache 24h -> gọi vnstock trực tiếp -> cache cũ (hết hạn nhưng
+    vẫn còn) -> SECTOR_FALLBACK (~85 mã) khi mọi cách trên đều thất bại.
+    """
+    if not force_refresh:
+        cached = _load_sector_cache()
+        if cached:
+            return cached
+
+    fresh = _fetch_sectors_from_vnstock()
+    if fresh:
+        _save_sector_cache(fresh)
+        return fresh
+
+    try:
+        with open(SECTOR_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("sectors"):
+            return data["sectors"]
+    except Exception:
+        pass
+
+    return {t: {"sector": s} for t, s in SECTOR_FALLBACK.items()}
+
+
 def get_blacklist() -> Set[str]:
     return set(DEFAULT_BLACKLIST)
