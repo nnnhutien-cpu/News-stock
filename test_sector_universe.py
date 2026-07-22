@@ -85,7 +85,22 @@ def test_parse_mock_vnstock_dataframe():
     del sys.modules["vnstock"]
 
 
+def test_map_to_grouped_sector_edge_cases():
+    """Kiểm tra riêng hàm map_to_grouped_sector() với các ca dễ gán nhầm."""
+    # Ca mơ hồ: tên ICB tiện ích gộp chứa cả "dầu khí" lẫn "điện" -> phải
+    # về nhóm Điện - Tiện ích, KHÔNG phải Dầu khí.
+    assert tu.map_to_grouped_sector(["Điện, nước & xăng dầu khí đốt"]) == "Điện - Tiện ích"
+    # Công ty dầu khí thuần, không có "điện" -> đúng là Dầu khí.
+    assert tu.map_to_grouped_sector(["Dầu khí", "Dầu khí"]) == "Dầu khí"
+    # Ngân hàng phải thắng dù ICB cấp 1 ghi là "Tài chính" chung chung.
+    assert tu.map_to_grouped_sector(["Tài chính", "Ngân hàng", "Ngân hàng"]) == "Ngân hàng"
+    # Không khớp từ khoá nào -> "Khác".
+    assert tu.map_to_grouped_sector(["Giải trí đại chúng"]) == "Khác"
+    print("[OK] map_to_grouped_sector() xử lý đúng các ca mơ hồ (điện/dầu khí, ngân hàng/tài chính)")
+
+
 if __name__ == "__main__":
     test_fallback_offline()
     test_parse_mock_vnstock_dataframe()
+    test_map_to_grouped_sector_edge_cases()
     print("\n=> TẤT CẢ TEST get_ticker_sectors() PASS")
