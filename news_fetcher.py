@@ -31,7 +31,7 @@ import feedparser
 import requests
 
 from ticker_detector import TickerDetector
-from ticker_universe import get_blacklist, get_company_aliases, get_ticker_universe
+from ticker_universe import get_blacklist, get_company_aliases, get_ticker_sectors, get_ticker_universe
 
 # {category: {source_name: rss_url}}
 # LƯU Ý: toàn bộ URL dưới đây đã được xác minh trực tiếp từ trang "RSS Feeds"
@@ -79,6 +79,7 @@ class NewsItem:
     published: str = ""
     description: str = ""
     tickers: List[str] = field(default_factory=list)
+    sector: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -86,6 +87,7 @@ class NewsItem:
             "Link": self.link,
             "Nguồn": self.source,
             "Chuyên mục": self.category,
+            "Ngành": self.sector,
             "Thời gian": self.published,
             "Mã CK": ", ".join(self.tickers) if self.tickers else "",
         }
@@ -161,15 +163,19 @@ def _fetch_one_feed(url: str, timeout: int = 12) -> "tuple[Optional[object], Fet
 def fetch_all_news(
     limit_per_feed: int = 25,
     detector: TickerDetector | None = None,
+    sector_map: Dict[str, dict] | None = None,
     verbose: bool = True,
 ) -> "tuple[List[NewsItem], List[FetchStatus]]":
-    """Cào toàn bộ nguồn RSS, chuẩn hoá, gắn mã CK và khử trùng lặp.
+    """Cào toàn bộ nguồn RSS, chuẩn hoá, gắn mã CK + ngành và khử trùng lặp.
 
     Args:
         limit_per_feed: số tin mới nhất lấy mỗi feed (feed nào cũng có
             thể chứa hàng chục tin, chỉ cần đủ để không sót tin quan trọng).
         detector: truyền vào từ ngoài để tái sử dụng universe đã cache;
             nếu None sẽ tự khởi tạo (gọi get_ticker_universe()).
+        sector_map: dict {MÃ: {"sector": ...}} lấy từ
+            ticker_universe.get_ticker_sectors(); nếu None sẽ tự gọi hàm đó
+            (có cache 24h nên gọi lại nhiều lần vẫn nhẹ).
         verbose: in log từng nguồn ra stdout (hiện được trong log của
             GitHub Actions) — bật mặc định vì im lặng bỏ qua lỗi chính là
             lý do gây khó chẩn đoán trước đây.
@@ -181,6 +187,8 @@ def fetch_all_news(
     """
     if detector is None:
         detector = TickerDetector(get_ticker_universe(), get_blacklist(), get_company_aliases())
+    if sector_map is None:
+        sector_map = get_ticker_sectors()
 
     seen_titles: set[str] = set()
     all_items: List[NewsItem] = []
@@ -217,6 +225,17 @@ def fetch_all_news(
                 match = detector.detect(title=title, description=description, link=link)
                 tickers = match.codes
 
+                # Ngành lấy theo mã ĐẦU TIÊN nhận diện được trong tiêu đề;
+                # nếu 1 tin nhắc nhiều công ty khác ngành thì chỉ ngành đầu
+                # tiên được dùng để gom nhóm (giới hạn đã biết, chấp nhận
+                # được vì đa số tin doanh nghiệp chỉ xoay quanh 1 công ty).
+                sector = ""
+                for tk in tickers:
+                    info = sector_map.get(tk)
+                    if info and info.get("sector"):
+                        sector = info["sector"]
+                        break
+
                 # Một tin có mã CK hợp lệ trong tiêu đề luôn được coi là
                 # tin DOANH NGHIỆP, bất kể nó được cào từ feed chuyên mục
                 # nào (vĩ mô, thị trường chung...) — đây chính là phần sửa
@@ -232,6 +251,7 @@ def fetch_all_news(
                         published=published,
                         description=description,
                         tickers=tickers,
+                        sector=sector,
                     )
                 )
 
@@ -247,6 +267,20 @@ def group_by_category(items: List[NewsItem]) -> Dict[str, List[NewsItem]]:
     for item in items:
         grouped.setdefault(item.category, []).append(item)
     return grouped
+
+
+def group_by_sector(items: List[NewsItem]) -> Dict[str, List[NewsItem]]:
+    """Nhóm các tin DOANH NGHIỆP (có mã CK) theo ngành, dùng cho tab
+    'Doanh nghiệp niêm yết theo ngành'. Tin không xác định được ngành
+    (mã hiếm/chưa có trong dữ liệu phân ngành) rơi vào nhóm 'Chưa phân loại'.
+    """
+    grouped: Dict[str, List[NewsItem]] = {}
+    for item in items:
+        if not item.tickers:
+            continue
+        sector = item.sector or "Chưa phân loại"
+        grouped.setdefault(sector, []).append(item)
+    return dict(sorted(grouped.items(), key=lambda kv: len(kv[1]), reverse=True))
 
 
 def collect_tickers_today(items: List[NewsItem]) -> Dict[str, int]:
