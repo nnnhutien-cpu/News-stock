@@ -61,7 +61,6 @@ Dùng cho (chỉ ngành thép): Giá HRC, sản lượng, xuất nhập khẩu
 ### 5. Báo chính thống
 | Báo | URL | Đặc thù |
 |---|---|---|
-| VnExpress | vnexpress.net | Tin KQKD nhanh, góc nhìn tổng quan |
 | Tuổi Trẻ | tuoitre.vn | Tin giao dịch khối ngoại, block trade |
 | Thời báo Tài chính VN | thoibaotaichinhvietnam.vn | Tin khối ngoại, vĩ mô |
 | Thị trường Tài chính Tiền tệ | thitruongtaichinhtiente.vn | Tin sản lượng, giao dịch nội bộ CĐ |
@@ -82,26 +81,32 @@ Dùng cho: Thông tin chính thức 100% (công bố thông tin, BCTC)
 ### 🎯 Tóm tắt ưu tiên theo loại tin
 | Loại tin cần | Nguồn ưu tiên #1 | Nguồn phụ |
 |---|---|---|
-| KQKD quý/năm | VnExpress + Trang DN | CafeF |
+| KQKD quý/năm | Trang DN + Vietstock | CafeF |
 | Sản lượng/kinh doanh | Thị trường Tài chính | CafeF |
 | Dự án/công suất mới | Tạp chí Công Thương | VietnamBiz |
 | Giá ngành (thép, dầu) | VSA + VietnamBiz | Asemconnect |
 | Khối ngoại/block trade | Tuổi Trẻ + Thời báo Tài chính | CafeF |
 | Cổ tức/phát hành CP | CafeF + VSD | HOSE Disclosure |
-| Vĩ mô (lãi suất, CPI) | VnExpress | Thời báo Tài chính |
+| Vĩ mô (lãi suất, CPI) | VnEconomy | Thời báo Tài chính |
 """
 
 # --- GIAO DIỆN STREAMLIT ---
-st.subheader("📚 Cẩm nang Nguồn dữ liệu & Cách lấy tin")
+def render_tab_sources():
+    st.subheader("📚 Cẩm nang Nguồn dữ liệu & Cách lấy tin")
 
-# Hiển thị cho người dùng đọc lướt trên web
-with st.expander("👁️ Bấm để xem trực tiếp Cẩm nang", expanded=False):
-    st.markdown(HUONG_DAN_CONTENT)
+    # Hiển thị cho người dùng đọc lướt trên web
+    with st.expander("👁️ Bấm để xem trực tiếp Cẩm nang", expanded=False):
+        st.markdown(HUONG_DAN_CONTENT)
 
-# Cung cấp nút Download
-st.download_button(
-    label="📥 Tải về Bí kíp Nguồn tin (.md)",
-    data=HUONG_DAN_CONTENT,
-    file_name="cam_nang_nguon_tin_CK_VN.md",
-    mime="text/markdown"
-)
+    # Cung cấp nút Download
+    st.download_button(
+        label="📥 Tải về Bí kíp Nguồn tin (.md)",
+        data=HUONG_DAN_CONTENT,
+        file_name="cam_nang_nguon_tin_CK_VN.md",
+        mime="text/markdown",
+    )
+
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Nguồn dữ liệu CK VN", layout="wide")
+    render_tab_sources()
