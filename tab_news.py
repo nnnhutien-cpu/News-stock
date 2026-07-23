@@ -113,10 +113,7 @@ RSS_FEEDS = [
     ("VietnamBiz", "https://vietnambiz.vn/chung-khoan.rss"),
     ("VietnamBiz", "https://vietnambiz.vn/doanh-nghiep.rss"),
     ("VietnamBiz", "https://vietnambiz.vn/ngan-hang.rss"),
-    # VnExpress
-    ("VnExpress", "https://vnexpress.net/rss/kinh-doanh/chung-khoan.rss"),
-    ("VnExpress", "https://vnexpress.net/rss/kinh-doanh.rss"),
-    # Thế giới / quốc tế — CHỈ dùng nguồn tài chính quốc tế, bỏ VnExpress the-gioi (lẫn bóng đá/xã hội)
+    # Thế giới / quốc tế — chỉ dùng nguồn tài chính quốc tế
     ("CafeF", "https://cafef.vn/tai-chinh-quoc-te.rss"),
     ("Vietstock", "https://vietstock.vn/rss/the-gioi.rss"),
     ("VnEconomy", "https://vneconomy.vn/rss/the-gioi.rss"),
@@ -490,7 +487,7 @@ def render_tab_news():
             st.rerun()
 
     # Load data
-    with st.spinner("Đang tải tin từ 6 nguồn..."):
+    with st.spinner("Đang tải tin từ 5 nguồn..."):
         all_news = fetch_all_news()
 
     total = len(all_news)
@@ -498,7 +495,7 @@ def render_tab_news():
 
     st.caption(
         f"📊 {total} tin (trong {MAX_AGE_DAYS} ngày gần nhất) · {len(all_tickers_found)} mã được nhắc đến · "
-        f"Nguồn: CafeF · Vietstock · TNCK · VnEconomy · VietnamBiz · VnExpress · "
+        f"Nguồn: CafeF · Vietstock · TNCK · VnEconomy · VietnamBiz · "
         f"Cập nhật 15 phút/lần · Mới nhất → cũ nhất"
     )
 
